@@ -39,6 +39,7 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - adventure-engine
+    - text
 
 tests:
   adventure-engine-test:

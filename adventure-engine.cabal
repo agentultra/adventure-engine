@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3bf0843d0507d4010536d28fbb7a91c40c4d6a305f3604b937d8ff82aa2aba28
+-- hash: 8bf7197efe36a9051e884e8428b67d4bdab526cef8c07b7ff1ff853a1dfc38ad
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -49,6 +49,7 @@ executable adventure-engine-exe
   build-depends:
       adventure-engine
     , base >=4.7 && <5
+    , text
   default-language: Haskell2010
 
 test-suite adventure-engine-test

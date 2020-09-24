@@ -1,18 +1,20 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Adventure.Engine where
 
-import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Text (Text)
+import qualified Data.Text as T
 
 newtype EntityId a = EntityId Int
   deriving (Eq, Ord, Show)
 
 data Room
   = Room
-  { _roomName        :: String
-  , _roomDescription :: String
+  { _roomName        :: Text
+  , _roomDescription :: Text
   , _roomItems       :: [EntityId Item]
   , _roomExits       :: [EntityId Exit]
   }
@@ -20,8 +22,8 @@ data Room
 
 data Item
   = Item
-  { _itemName        :: String
-  , _itemDescription :: String
+  { _itemName        :: Text
+  , _itemDescription :: Text
   , _itemSize        :: Int
   , _itemWeight      :: Int
   }
@@ -29,8 +31,8 @@ data Item
 
 data Exit
   = Exit
-  { _exitName        :: String
-  , _exitDescription :: String
+  { _exitName        :: Text
+  , _exitDescription :: Text
   , _exitFrom        :: EntityId Room
   , _exitTo          :: EntityId Room
   }
@@ -65,14 +67,14 @@ defaultWorld = World
   M.empty
   (EntityId 0)
 
-renderRoom :: Room -> [Item] -> [Exit] -> String
-renderRoom (Room name desc _ _) items exits = unlines
+renderRoom :: Room -> [Item] -> [Exit] -> Text
+renderRoom (Room name desc _ _) items exits = T.unlines
   [ name
   , "-----------"
   , desc
   , "----------"
-  , "You see: " <> intercalate ", " (_itemName <$> items)
-  , "Possible exits: " <> intercalate ", " (_exitName <$> exits)
+  , "You see: " <> T.intercalate ", " (_itemName <$> items)
+  , "Possible exits: " <> T.intercalate ", " (_exitName <$> exits)
   ]
 
 -- Managing the World
@@ -106,7 +108,7 @@ walkTo world@(World rooms _ exits playerRoom) exitId = do
     then Left SpaceWizard
     else pure $ world { _playerRoom = _exitTo exit }
 
-render :: World -> Either GameError String
+render :: World -> Either GameError Text
 render (World rooms items exits playerRoom) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
     M.lookup playerRoom rooms
