@@ -169,8 +169,8 @@ repl world = do
           Right world' ->
             let renderedWorld = render world'
             in case renderedWorld of
-                 Left err -> print err >> repl world
-                 Right output -> T.putStrLn output >> repl world
+                 Left err -> print err >> repl world'
+                 Right output -> T.putStrLn output >> repl world'
 
 newtype Verb = Verb Text
   deriving (Eq, Show)
