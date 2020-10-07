@@ -19,7 +19,7 @@ data Room
   { _roomName        :: Text
   , _roomDescription :: Text
   , _roomItems       :: [EntityId Item]
-  , _roomExits       :: [EntityId Exit]
+  , _roomExits       :: Map Text (EntityId Exit)
   }
   deriving (Eq, Show)
 
@@ -46,7 +46,6 @@ data World
   { _worldRooms      :: Map (EntityId Room) Room
   , _worldItems      :: Map (EntityId Item) Item
   , _worldExits      :: Map (EntityId Exit) Exit
-  , _worldExitByName :: Map Text (EntityId Exit)
   , _playerRoom      :: EntityId Room
   }
   deriving (Eq, Show)
@@ -56,14 +55,14 @@ frontPorch = Room
   "The Front Porch"
   "There's a faded white picket fence in the yard and an old swing next to you."
   [EntityId 1, EntityId 2]
-  [EntityId 3]
+  $ M.fromList [("Door", EntityId 3)]
 
 mainHall :: Room
 mainHall = Room
   "Main Hall"
   "The main hall of the house is plastered in yellowing wall paper."
   []
-  [EntityId 5]
+  $ M.fromList [("Door", EntityId 5)]
 
 shovel :: Item
 shovel = Item "Shovel" "A rusted shovel with a wooden handle." 2 4
@@ -90,7 +89,6 @@ defaultWorld = World
   (M.fromList [(EntityId 0, frontPorch), (EntityId 6, mainHall)])
   (M.fromList [(EntityId 1, shovel), (EntityId 2, purse)])
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
-  (M.fromList [("Door", EntityId 3), ("Door2", EntityId 5)])
   (EntityId 0)
 
 renderRoom :: Room -> [Item] -> [Exit] -> Text
@@ -125,7 +123,7 @@ update world = \case
   Look -> pure world
 
 walkTo :: World -> EntityId Exit -> Either GameError World
-walkTo world@(World rooms _ exits _ playerRoom) exitId = do
+walkTo world@(World rooms _ exits playerRoom) exitId = do
   exit <- maybeToRight (ExitDoesNotExist exitId) $
     M.lookup exitId exits
   _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
@@ -137,11 +135,11 @@ walkTo world@(World rooms _ exits _ playerRoom) exitId = do
     else pure $ world { _playerRoom = _exitTo exit }
 
 render :: World -> Either GameError Text
-render (World rooms items exits _ playerRoom) = do
+render (World rooms items exits playerRoom) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
     M.lookup playerRoom rooms
   items' <- traverse getItem (_roomItems room)
-  exits' <- traverse getExit (_roomExits room)
+  exits' <- traverse getExit $ M.elems . _roomExits $ room
   pure $ renderRoom room items' exits'
   where
     getItem itemId  =
@@ -210,11 +208,13 @@ parseCommand :: Input -> World -> Either InputError Command
 parseCommand input world = do
   let (Verb verb) = _verb input
   case verb of
-    "walk" ->
+    "walk" -> do
+      room <- maybeToRight UnknownInput
+        $ M.lookup (_playerRoom world) (_worldRooms world)
       let dest = case _parameter input of
                    Nothing -> Nothing
-                   Just name -> M.lookup name (_worldExitByName world)
-      in case dest of
+                   Just name -> M.lookup name (_roomExits room)
+      case dest of
            Nothing -> Left UnknownInput
            Just exitId -> pure $ Walk exitId
     "look" -> pure $ Look
