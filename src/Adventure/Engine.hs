@@ -51,12 +51,19 @@ data World
   }
   deriving (Eq, Show)
 
-defaultRoom :: Room
-defaultRoom = Room
+frontPorch :: Room
+frontPorch = Room
   "The Front Porch"
   "There's a faded white picket fence in the yard and an old swing next to you."
   [EntityId 1, EntityId 2]
+  [EntityId 3]
+
+mainHall :: Room
+mainHall = Room
+  "Main Hall"
+  "The main hall of the house is plastered in yellowing wall paper."
   []
+  [EntityId 5]
 
 shovel :: Item
 shovel = Item "Shovel" "A rusted shovel with a wooden handle." 2 4
@@ -64,19 +71,26 @@ shovel = Item "Shovel" "A rusted shovel with a wooden handle." 2 4
 purse :: Item
 purse = Item "Purse" "Weathered, old, leather purse." 1 1
 
-door :: Exit
-door = Exit
+frontDoorOutside :: Exit
+frontDoorOutside = Exit
   "Door"
   "It looks like it hasn't been opened in a long time."
   (EntityId 0)
+  (EntityId 6)
+
+frontDoorInside :: Exit
+frontDoorInside = Exit
+  "Door"
+  "You came through here."
+  (EntityId 6)
   (EntityId 0)
 
 defaultWorld :: World
 defaultWorld = World
-  (M.fromList [(EntityId 0, defaultRoom)])
+  (M.fromList [(EntityId 0, frontPorch), (EntityId 6, mainHall)])
   (M.fromList [(EntityId 1, shovel), (EntityId 2, purse)])
-  (M.fromList [(EntityId 3, door)])
-  (M.fromList [("Door", EntityId 3)])
+  (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
+  (M.fromList [("Door", EntityId 3), ("Door2", EntityId 5)])
   (EntityId 0)
 
 renderRoom :: Room -> [Item] -> [Exit] -> Text
