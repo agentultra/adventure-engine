@@ -94,6 +94,7 @@ renderRoom (Room name desc _ _) items exits = T.unlines
 data Command
   = Walk (EntityId Exit)
   | PickUp (EntityId Item)
+  | Look
   deriving (Eq, Show)
 
 data GameError
@@ -107,6 +108,7 @@ update :: World -> Command -> Either GameError World
 update world = \case
   Walk exitId   -> walkTo world exitId
   PickUp _ -> undefined
+  Look -> pure world
 
 walkTo :: World -> EntityId Exit -> Either GameError World
 walkTo world@(World rooms _ exits _ playerRoom) exitId = do
@@ -144,16 +146,16 @@ repl world = do
   rawInput <- getLine
   let input = parseInput $ T.pack rawInput
   case input of
-    Left err -> print err
+    Left err -> print err >> repl world
     Right inp -> case parseCommand inp world of
-      Left err -> print err
+      Left err -> print err >> repl world
       Right cmd ->
         case update world cmd of
-          Left err -> print err
+          Left err -> print err >> repl world
           Right world' ->
             let renderedWorld = render world'
             in case renderedWorld of
-                 Left err -> print err
+                 Left err -> print err >> repl world
                  Right output -> T.putStrLn output >> repl world
 
 newtype Verb = Verb Text
@@ -166,7 +168,7 @@ pickup :: Verb
 pickup = Verb "pickup"
 
 verbs :: [Text]
-verbs = ["walk", "pickup"]
+verbs = ["look", "walk", "pickup"]
 
 data InputError
   = InvalidVerb
@@ -193,14 +195,16 @@ parseInput = mkInput . take 2 . T.split (==' ')
 parseCommand :: Input -> World -> Either InputError Command
 parseCommand input world = do
   let (Verb verb) = _verb input
-  if verb == "walk"
-    then let dest = case _parameter input of
-                      Nothing -> Nothing
-                      Just name -> M.lookup name (_worldExitByName world)
-         in case dest of
-              Nothing -> Left UnknownInput
-              Just exitId -> pure $ Walk exitId
-    else Left ParseFail
+  case verb of
+    "walk" ->
+      let dest = case _parameter input of
+                   Nothing -> Nothing
+                   Just name -> M.lookup name (_worldExitByName world)
+      in case dest of
+           Nothing -> Left UnknownInput
+           Just exitId -> pure $ Walk exitId
+    "look" -> pure $ Look
+    _ -> Left InvalidVerb
 {-
 walk north
 pickup shovel
