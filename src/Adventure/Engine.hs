@@ -180,11 +180,9 @@ repl w = do
               loop world'
 
 parseLine :: Text -> World -> InputT IO Command
-parseLine raw world = case parseInput raw of
-  Left err -> throwIO err
-  Right input -> case parseCommand input world of
-    Left err -> throwIO err
-    Right cmd -> pure cmd
+parseLine raw world = do
+  input <- eitherToInput . parseInput $ raw
+  eitherToInput . parseCommand input $ world
 
 displayWorld :: World -> InputT IO ()
 displayWorld world = case render world of
@@ -252,3 +250,7 @@ pickup shovel
 maybeToRight :: b -> Maybe a -> Either b a
 maybeToRight _ (Just x) = Right x
 maybeToRight y Nothing  = Left y
+
+eitherToInput :: (Exception e, MonadException m) => Either e a -> InputT m a
+eitherToInput (Left err)     = throwIO err
+eitherToInput (Right result) = pure result
