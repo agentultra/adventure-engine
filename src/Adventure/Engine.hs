@@ -169,29 +169,27 @@ repl w = do
         Just "quit" -> do
           outputStrLn "Goodbye!"
           pure ()
-        Just rawInput ->
-          case parseInput . T.pack $ rawInput of
+        Just rawInput -> do
+          cmd <- parseLine (T.pack rawInput) world
+          case update world cmd of
             Left err -> do
               outputStrLn $ show err
               loop world
-            Right input ->
-              case parseCommand input world of
-                Left err -> do
-                  outputStrLn $ show err
-                  loop world
-                Right cmd ->
-                  case update world cmd of
-                    Left err -> do
-                      outputStrLn $ show err
-                      loop world
-                    Right world' ->
-                      case render world' of
-                        Left err -> do
-                          outputStrLn $ show err
-                          loop world'
-                        Right rendered -> do
-                          outputStrLn . T.unpack $ rendered
-                          loop world'
+            Right world' -> do
+              displayWorld world'
+              loop world'
+
+parseLine :: Text -> World -> InputT IO Command
+parseLine raw world = case parseInput raw of
+  Left err -> throwIO err
+  Right input -> case parseCommand input world of
+    Left err -> throwIO err
+    Right cmd -> pure cmd
+
+displayWorld :: World -> InputT IO ()
+displayWorld world = case render world of
+  Left err       -> outputStrLn $ show err
+  Right rendered -> outputStrLn . T.unpack $ rendered
 
 newtype Verb = Verb Text
   deriving (Eq, Show)
@@ -210,6 +208,8 @@ data InputError
   | ParseFail
   | UnknownInput
   deriving (Eq, Show)
+
+instance Exception InputError
 
 data Input
   = Input
