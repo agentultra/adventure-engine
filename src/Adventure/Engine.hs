@@ -170,19 +170,23 @@ repl w = do
           outputStrLn "Goodbye!"
           pure ()
         Just rawInput -> do
-          cmd <- parseLine (T.pack rawInput) world
-          case update world cmd of
+          case parseLine (T.pack rawInput) world of
             Left err -> do
               outputStrLn $ show err
               loop world
-            Right world' -> do
-              displayWorld world'
-              loop world'
+            Right cmd ->
+              case update world cmd of
+                Left err -> do
+                  outputStrLn $ show err
+                  loop world
+                Right world' -> do
+                  displayWorld world'
+                  loop world'
 
-parseLine :: Text -> World -> InputT IO Command
+parseLine :: Text -> World -> Either InputError Command
 parseLine raw world = do
-  input <- eitherToInput . parseInput $ raw
-  eitherToInput . parseCommand input $ world
+  input <- parseInput $ raw
+  parseCommand input $ world
 
 displayWorld :: World -> InputT IO ()
 displayWorld world = case render world of
