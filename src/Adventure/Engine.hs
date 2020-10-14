@@ -8,6 +8,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
 import System.Console.Haskeline
 
 newtype EntityId a = EntityId Int
@@ -151,7 +152,14 @@ render (World rooms items exits playerRoom) = do
         Just exit -> Right exit
 
 repl :: World -> IO ()
-repl = runInputT defaultSettings . loop
+repl w = do
+  let initialRender = render w
+  case initialRender of
+    Left err -> do
+      putStrLn (show err)
+      pure ()
+    Right rendered -> T.putStrLn rendered
+  runInputT defaultSettings $ (loop w)
   where
     loop :: World -> InputT IO ()
     loop world = do
