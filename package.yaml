@@ -27,6 +27,7 @@ library:
   source-dirs: src
   dependencies:
   - containers
+  - haskeline
   - text
 
 executables:

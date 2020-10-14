@@ -8,8 +8,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import System.IO (hFlush, stdout)
+import System.Console.Haskeline
 
 newtype EntityId a = EntityId Int
   deriving (Eq, Ord, Show)
@@ -152,23 +151,39 @@ render (World rooms items exits playerRoom) = do
         Just exit -> Right exit
 
 repl :: World -> IO ()
-repl world = do
-  putStr ">> "
-  hFlush stdout
-  rawInput <- getLine
-  let input = parseInput $ T.pack rawInput
-  case input of
-    Left err -> print err >> repl world
-    Right inp -> case parseCommand inp world of
-      Left err -> print err >> repl world
-      Right cmd ->
-        case update world cmd of
-          Left err -> print err >> repl world
-          Right world' ->
-            let renderedWorld = render world'
-            in case renderedWorld of
-                 Left err -> print err >> repl world'
-                 Right output -> T.putStrLn output >> repl world'
+repl = runInputT defaultSettings . loop
+  where
+    loop :: World -> InputT IO ()
+    loop world = do
+      userInput <- getInputLine ">> "
+      case userInput of
+        Nothing -> pure ()
+        Just "quit" -> do
+          outputStrLn "Goodbye!"
+          pure ()
+        Just rawInput ->
+          case parseInput . T.pack $ rawInput of
+            Left err -> do
+              outputStrLn $ show err
+              loop world
+            Right input ->
+              case parseCommand input world of
+                Left err -> do
+                  outputStrLn $ show err
+                  loop world
+                Right cmd ->
+                  case update world cmd of
+                    Left err -> do
+                      outputStrLn $ show err
+                      loop world
+                    Right world' ->
+                      case render world' of
+                        Left err -> do
+                          outputStrLn $ show err
+                          loop world'
+                        Right rendered -> do
+                          outputStrLn . T.unpack $ rendered
+                          loop world'
 
 newtype Verb = Verb Text
   deriving (Eq, Show)
