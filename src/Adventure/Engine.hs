@@ -18,7 +18,7 @@ data Room
   = Room
   { _roomName        :: Text
   , _roomDescription :: Text
-  , _roomItems       :: [EntityId Item]
+  , _roomItems       :: Map Text (EntityId Item)
   , _roomExits       :: Map Text (EntityId Exit)
   }
   deriving (Eq, Show)
@@ -54,14 +54,14 @@ frontPorch :: Room
 frontPorch = Room
   "The Front Porch"
   "There's a faded white picket fence in the yard and an old swing next to you."
-  [EntityId 1, EntityId 2]
-  $ M.fromList [("Door", EntityId 3)]
+  (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2)])
+  (M.fromList [("Door", EntityId 3)])
 
 mainHall :: Room
 mainHall = Room
   "Main Hall"
   "The main hall of the house is plastered in yellowing wall paper."
-  []
+  M.empty
   $ M.fromList [("Door", EntityId 5)]
 
 shovel :: Item
@@ -105,13 +105,14 @@ renderRoom (Room name desc _ _) items exits = T.unlines
 
 data Command
   = Walk (EntityId Exit)
-  | PickUp (EntityId Item)
+  | PickUp Text (EntityId Item)
   | Look
   deriving (Eq, Show)
 
 data GameError
   = RoomDoesNotExist (EntityId Room)
   | ItemDoesNotExist (EntityId Item)
+  | ItemNotInRoom (EntityId Item) (EntityId Room)
   | ExitDoesNotExist (EntityId Exit)
   | SpaceWizard
   deriving (Eq, Show)
@@ -119,7 +120,7 @@ data GameError
 update :: World -> Command -> Either GameError World
 update world = \case
   Walk exitId   -> walkTo world exitId
-  PickUp _ -> undefined
+  PickUp itemName itemId -> pickUp world itemName itemId
   Look -> pure world
 
 walkTo :: World -> EntityId Exit -> Either GameError World
@@ -134,11 +135,27 @@ walkTo world@(World rooms _ exits playerRoom) exitId = do
     then Left SpaceWizard
     else pure $ world { _playerRoom = _exitTo exit }
 
+pickUp :: World -> Text -> EntityId Item -> Either GameError World
+pickUp world@(World rooms items _ playerRoom) itemName itemId = do
+  _ <- maybeToRight SpaceWizard $
+    M.lookup playerRoom rooms
+  -- TODO: add a message, update inventory
+  _ <- maybeToRight (ItemDoesNotExist itemId) $
+    M.lookup itemId items
+  pure $ world
+    { _worldRooms = M.adjust removeItem playerRoom rooms
+    }
+  where
+    removeItem r = r
+      { _roomItems = M.update (const Nothing) itemName (_roomItems r)
+      }
+
+-- M.update (const Nothing) itemName (_roomItems room)
 render :: World -> Either GameError Text
 render (World rooms items exits playerRoom) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
     M.lookup playerRoom rooms
-  items' <- traverse getItem (_roomItems room)
+  items' <- traverse getItem $ M.elems (_roomItems room)
   exits' <- traverse getExit $ M.elems . _roomExits $ room
   pure $ renderRoom room items' exits'
   where
@@ -156,10 +173,10 @@ repl w = do
   let initialRender = render w
   case initialRender of
     Left err -> do
-      putStrLn (show err)
+      print err
       pure ()
     Right rendered -> T.putStrLn rendered
-  runInputT defaultSettings $ (loop w)
+  runInputT defaultSettings $ loop w
   where
     loop :: World -> InputT IO ()
     loop world = do
@@ -169,7 +186,7 @@ repl w = do
         Just "quit" -> do
           outputStrLn "Goodbye!"
           pure ()
-        Just rawInput -> do
+        Just rawInput ->
           case parseLine (T.pack rawInput) world of
             Left err -> do
               outputStrLn $ show err
@@ -185,8 +202,8 @@ repl w = do
 
 parseLine :: Text -> World -> Either InputError Command
 parseLine raw world = do
-  input <- parseInput $ raw
-  parseCommand input $ world
+  input <- parseInput raw
+  parseCommand input world
 
 displayWorld :: World -> InputT IO ()
 displayWorld world = case render world of
@@ -242,7 +259,14 @@ parseCommand input world = do
       case dest of
            Nothing -> Left UnknownInput
            Just exitId -> pure $ Walk exitId
-    "look" -> pure $ Look
+    "look" -> pure Look
+    "pickup" -> do
+      room <- maybeToRight UnknownInput $
+        M.lookup (_playerRoom world) (_worldRooms world)
+      itemName <- maybeToRight UnknownInput $ _parameter input
+      itemId <- maybeToRight UnknownInput $
+        M.lookup itemName (_roomItems room)
+      pure $ PickUp itemName itemId
     _ -> Left InvalidVerb
 {-
 walk north
@@ -250,6 +274,12 @@ pickup shovel
 -}
 
 -- Utilities
+
+maybeElem :: (Foldable t, Eq a) => a -> t a -> Maybe a
+maybeElem x xs =
+  if x `elem` xs
+  then Just x
+  else Nothing
 
 maybeToRight :: b -> Maybe a -> Either b a
 maybeToRight _ (Just x) = Right x
