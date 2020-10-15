@@ -108,9 +108,11 @@ renderRoom (Room name desc _ _) items exits invItems = T.unlines
 
 -- Managing the World
 
+type ItemName = Text
+
 data Command
   = Walk (EntityId Exit)
-  | PickUp Text (EntityId Item)
+  | PickUp ItemName (EntityId Item)
   | Look
   deriving (Eq, Show)
 
@@ -140,7 +142,7 @@ walkTo world@(World rooms _ exits playerRoom _) exitId = do
     then Left SpaceWizard
     else pure $ world { _playerRoom = _exitTo exit }
 
-pickUp :: World -> Text -> EntityId Item -> Either GameError World
+pickUp :: World -> ItemName -> EntityId Item -> Either GameError World
 pickUp world@(World rooms items _ playerRoom playerInv) itemName itemId = do
   _ <- maybeToRight SpaceWizard $
     M.lookup playerRoom rooms
@@ -260,12 +262,10 @@ parseCommand input world = do
     "walk" -> do
       room <- maybeToRight UnknownInput
         $ M.lookup (_playerRoom world) (_worldRooms world)
-      let dest = case _parameter input of
-                   Nothing -> Nothing
-                   Just name -> M.lookup name (_roomExits room)
-      case dest of
-           Nothing -> Left UnknownInput
-           Just exitId -> pure $ Walk exitId
+      destName <- maybeToRight UnknownInput $ _parameter input
+      exitId <- maybeToRight UnknownInput $
+        M.lookup destName (_roomExits room)
+      pure $ Walk exitId
     "look" -> pure Look
     "pickup" -> do
       room <- maybeToRight UnknownInput $
