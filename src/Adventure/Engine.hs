@@ -6,6 +6,8 @@ module Adventure.Engine where
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Set (Set)
+import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -47,6 +49,7 @@ data World
   , _worldItems      :: Map (EntityId Item) Item
   , _worldExits      :: Map (EntityId Exit) Exit
   , _playerRoom      :: EntityId Room
+  , _playerInventory :: Set (EntityId Item)
   }
   deriving (Eq, Show)
 
@@ -90,14 +93,16 @@ defaultWorld = World
   (M.fromList [(EntityId 1, shovel), (EntityId 2, purse)])
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
   (EntityId 0)
+  S.empty
 
-renderRoom :: Room -> [Item] -> [Exit] -> Text
-renderRoom (Room name desc _ _) items exits = T.unlines
+renderRoom :: Room -> [Item] -> [Exit] -> [Item] -> Text
+renderRoom (Room name desc _ _) items exits invItems = T.unlines
   [ name
   , "-----------"
   , desc
   , "----------"
   , "You see: " <> T.intercalate ", " (_itemName <$> items)
+  , "You are holding: " <> T.intercalate ", " (_itemName <$> invItems)
   , "Possible exits: " <> T.intercalate ", " (_exitName <$> exits)
   ]
 
@@ -124,7 +129,7 @@ update world = \case
   Look -> pure world
 
 walkTo :: World -> EntityId Exit -> Either GameError World
-walkTo world@(World rooms _ exits playerRoom) exitId = do
+walkTo world@(World rooms _ exits playerRoom _) exitId = do
   exit <- maybeToRight (ExitDoesNotExist exitId) $
     M.lookup exitId exits
   _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
@@ -136,7 +141,7 @@ walkTo world@(World rooms _ exits playerRoom) exitId = do
     else pure $ world { _playerRoom = _exitTo exit }
 
 pickUp :: World -> Text -> EntityId Item -> Either GameError World
-pickUp world@(World rooms items _ playerRoom) itemName itemId = do
+pickUp world@(World rooms items _ playerRoom playerInv) itemName itemId = do
   _ <- maybeToRight SpaceWizard $
     M.lookup playerRoom rooms
   -- TODO: add a message, update inventory
@@ -144,6 +149,7 @@ pickUp world@(World rooms items _ playerRoom) itemName itemId = do
     M.lookup itemId items
   pure $ world
     { _worldRooms = M.adjust removeItem playerRoom rooms
+    , _playerInventory = S.insert itemId playerInv
     }
   where
     removeItem r = r
@@ -152,12 +158,13 @@ pickUp world@(World rooms items _ playerRoom) itemName itemId = do
 
 -- M.update (const Nothing) itemName (_roomItems room)
 render :: World -> Either GameError Text
-render (World rooms items exits playerRoom) = do
+render (World rooms items exits playerRoom playerInv) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
     M.lookup playerRoom rooms
   items' <- traverse getItem $ M.elems (_roomItems room)
   exits' <- traverse getExit $ M.elems . _roomExits $ room
-  pure $ renderRoom room items' exits'
+  invItems <- traverse getItem $ S.elems playerInv
+  pure $ renderRoom room items' exits' invItems
   where
     getItem itemId  =
       case M.lookup itemId items of
