@@ -7,8 +7,6 @@ import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Maybe
-import Data.Set (Set)
-import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -50,7 +48,7 @@ data World
   , _worldItems      :: Map (EntityId Item) Item
   , _worldExits      :: Map (EntityId Exit) Exit
   , _playerRoom      :: EntityId Room
-  , _playerInventory :: Set (EntityId Item)
+  , _playerInventory :: Map Text (EntityId Item)
   }
   deriving (Eq, Show)
 
@@ -94,7 +92,7 @@ defaultWorld = World
   (M.fromList [(EntityId 1, shovel), (EntityId 2, purse)])
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
   (EntityId 0)
-  S.empty
+  M.empty
 
 renderRoom :: Room -> [Item] -> [Exit] -> [Item] -> Text
 renderRoom (Room name desc _ _) items exits invItems = T.unlines
@@ -115,6 +113,7 @@ data Command
   = Walk (EntityId Exit)
   | PickUp ItemName (EntityId Item)
   | Look
+  | Drop ItemName (EntityId Item)
   deriving (Eq, Show)
 
 data GameError
@@ -127,9 +126,10 @@ data GameError
 
 update :: World -> Command -> Either GameError World
 update world = \case
-  Walk exitId   -> walkTo world exitId
+  Walk exitId            -> walkTo world exitId
   PickUp itemName itemId -> pickUp world itemName itemId
-  Look -> pure world
+  Look                   -> pure world
+  Drop itemName itemId   -> dropTo world itemName itemId
 
 walkTo :: World -> EntityId Exit -> Either GameError World
 walkTo world@(World rooms _ exits playerRoom _) exitId = do
@@ -152,12 +152,25 @@ pickUp world@(World rooms items _ playerRoom playerInv) itemName itemId = do
     M.lookup itemId items
   pure $ world
     { _worldRooms = M.adjust removeItem playerRoom rooms
-    , _playerInventory = S.insert itemId playerInv
+    , _playerInventory = M.insert itemName itemId playerInv
     }
   where
     removeItem r = r
       { _roomItems = M.update (const Nothing) itemName (_roomItems r)
       }
+
+dropTo :: World -> ItemName -> EntityId Item -> Either GameError World
+dropTo world itemName itemId = do
+  let playerPos = _playerRoom world
+      playerInv = _playerInventory world
+      rooms     = _worldRooms world
+
+  pure $ world
+    { _worldRooms = M.adjust addItem playerPos rooms
+    , _playerInventory = M.delete itemName playerInv
+    }
+  where
+    addItem r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
 
 -- M.update (const Nothing) itemName (_roomItems room)
 render :: World -> Either GameError Text
@@ -166,7 +179,7 @@ render (World rooms items exits playerRoom playerInv) = do
     M.lookup playerRoom rooms
   items' <- traverse getItem $ M.elems (_roomItems room)
   exits' <- traverse getExit $ M.elems . _roomExits $ room
-  invItems <- traverse getItem $ S.elems playerInv
+  invItems <- traverse getItem $ M.elems playerInv
   pure $ renderRoom room items' exits' invItems
   where
     getItem itemId  =
@@ -226,14 +239,8 @@ newtype Verb = Verb { unVerb :: Text }
 verb :: Text -> Verb
 verb = Verb . T.toLower
 
-walk :: Verb
-walk = Verb "walk"
-
-pickup :: Verb
-pickup = Verb "pickup"
-
 verbs :: [Text]
-verbs = ["look", "walk", "pickup"]
+verbs = ["look", "walk", "pickup", "drop"]
 
 data InputError
   = InvalidVerb
@@ -282,6 +289,11 @@ parseCommand input world =
       itemId <- maybeToRight UnknownInput $
         M.lookup itemName (_roomItems room)
       pure $ PickUp itemName itemId
+    "drop" -> do
+      itemName <- maybeToRight UnknownInput $ _parameter input
+      itemId <- maybeToRight (UnknownParameter itemName) $
+        M.lookup itemName (_playerInventory world)
+      pure $ Drop itemName itemId
     _ -> Left InvalidVerb
 {-
 walk north
