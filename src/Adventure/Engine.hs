@@ -236,14 +236,18 @@ displayWorld world = case render world of
 newtype Verb = Verb { unVerb :: Text }
   deriving (Eq, Show)
 
-verb :: Text -> Verb
-verb = Verb . T.toLower
+verb :: Text -> Either InputError Verb
+verb v = case filter (T.isPrefixOf . T.toLower $ v) verbs of
+  []    -> Left InvalidVerb
+  [v']  -> Right $ Verb v'
+  (_:_) -> Left AmbiguousVerb
 
 verbs :: [Text]
 verbs = ["look", "walk", "pickup", "drop"]
 
 data InputError
   = InvalidVerb
+  | AmbiguousVerb
   | ParseFail
   | UnknownInput
   | UnknownParameter Text
@@ -262,13 +266,12 @@ parseInput :: Text -> Either InputError Input
 parseInput = mkInput . T.split (==' ')
   where
     mkInput [] = Left ParseFail
-    mkInput [x] =
-      maybeToRight InvalidVerb
-      $ (\v -> Input (verb v) Nothing)
-      <$> find (== T.toLower x) verbs
-    mkInput (x:xs) = maybeToRight InvalidVerb
-      $ (\v -> Input (verb v) (Just (T.toLower . T.unwords $ xs)))
-      <$> find (== T.toLower x) verbs
+    mkInput [x] = do
+      v <- verb x
+      pure $ Input v Nothing
+    mkInput (x:xs) = do
+      v <- verb x
+      pure $ Input v (Just (T.toLower . T.unwords $ xs))
 
 parseCommand :: Input -> World -> Either InputError Command
 parseCommand input world =
