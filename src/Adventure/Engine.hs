@@ -237,10 +237,13 @@ newtype Verb = Verb { unVerb :: Text }
   deriving (Eq, Show)
 
 verb :: Text -> Either InputError Verb
-verb v = case filter (T.isPrefixOf . T.toLower $ v) verbs of
-  []    -> Left InvalidVerb
-  [v']  -> Right $ Verb v'
-  (_:_) -> Left AmbiguousVerb
+verb v
+  | T.length v > 0 =
+    case filter (T.isPrefixOf . T.toLower $ v) verbs of
+      []      -> Left InvalidVerb
+      [v']    -> Right $ Verb v'
+      (_:_:_) -> Left AmbiguousVerb
+  | otherwise = Left InvalidVerb
 
 verbs :: [Text]
 verbs = ["look", "walk", "pickup", "drop"]
