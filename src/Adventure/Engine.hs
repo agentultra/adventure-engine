@@ -6,6 +6,7 @@ module Adventure.Engine where
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Text (Text)
@@ -58,7 +59,7 @@ frontPorch = Room
   "The Front Porch"
   "There's a faded white picket fence in the yard and an old swing next to you."
   (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2)])
-  (M.fromList [("Door", EntityId 3)])
+  (M.fromList [("Front Door", EntityId 3)])
 
 mainHall :: Room
 mainHall = Room
@@ -75,7 +76,7 @@ purse = Item "Purse" "Weathered, old, leather purse." 1 1
 
 frontDoorOutside :: Exit
 frontDoorOutside = Exit
-  "Door"
+  "Front Door"
   "It looks like it hasn't been opened in a long time."
   (EntityId 0)
   (EntityId 6)
@@ -235,6 +236,7 @@ data InputError
   = InvalidVerb
   | ParseFail
   | UnknownInput
+  | UnknownParameter Text
   deriving (Eq, Show)
 
 instance Exception InputError
@@ -247,13 +249,13 @@ data Input
   deriving (Eq, Show)
 
 parseInput :: Text -> Either InputError Input
-parseInput = mkInput . take 2 . T.split (==' ')
+parseInput = mkInput . T.split (==' ')
   where
     mkInput [] = Left ParseFail
     mkInput [x] = maybeToRight InvalidVerb $
         (\v -> Input (Verb v) Nothing) <$> find (== x) verbs
-    mkInput (x:y:_) = maybeToRight InvalidVerb $
-        (\v -> Input (Verb v) (Just y)) <$> find (== x) verbs
+    mkInput (x:xs) = maybeToRight InvalidVerb $
+        (\v -> Input (Verb v) (Just (T.unwords xs))) <$> find (== x) verbs
 
 parseCommand :: Input -> World -> Either InputError Command
 parseCommand input world = do
@@ -263,8 +265,9 @@ parseCommand input world = do
       room <- maybeToRight UnknownInput
         $ M.lookup (_playerRoom world) (_worldRooms world)
       destName <- maybeToRight UnknownInput $ _parameter input
-      exitId <- maybeToRight UnknownInput $
-        M.lookup destName (_roomExits room)
+      exitId <- maybeToRight
+        (UnknownParameter . fromJust $ _parameter input)
+        $ M.lookup destName (_roomExits room)
       pure $ Walk exitId
     "look" -> pure Look
     "pickup" -> do
