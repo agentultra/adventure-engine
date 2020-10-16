@@ -59,14 +59,14 @@ frontPorch = Room
   "The Front Porch"
   "There's a faded white picket fence in the yard and an old swing next to you."
   (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2)])
-  (M.fromList [("Front Door", EntityId 3)])
+  (M.fromList [("front door", EntityId 3)])
 
 mainHall :: Room
 mainHall = Room
   "Main Hall"
   "The main hall of the house is plastered in yellowing wall paper."
   M.empty
-  $ M.fromList [("Door", EntityId 5)]
+  $ M.fromList [("door", EntityId 5)]
 
 shovel :: Item
 shovel = Item "Shovel" "A rusted shovel with a wooden handle." 2 4
@@ -220,8 +220,11 @@ displayWorld world = case render world of
   Left err       -> outputStrLn $ show err
   Right rendered -> outputStrLn . T.unpack $ rendered
 
-newtype Verb = Verb Text
+newtype Verb = Verb { unVerb :: Text }
   deriving (Eq, Show)
+
+verb :: Text -> Verb
+verb = Verb . T.toLower
 
 walk :: Verb
 walk = Verb "walk"
@@ -252,15 +255,17 @@ parseInput :: Text -> Either InputError Input
 parseInput = mkInput . T.split (==' ')
   where
     mkInput [] = Left ParseFail
-    mkInput [x] = maybeToRight InvalidVerb $
-        (\v -> Input (Verb v) Nothing) <$> find (== x) verbs
-    mkInput (x:xs) = maybeToRight InvalidVerb $
-        (\v -> Input (Verb v) (Just (T.unwords xs))) <$> find (== x) verbs
+    mkInput [x] =
+      maybeToRight InvalidVerb
+      $ (\v -> Input (verb v) Nothing)
+      <$> find (== T.toLower x) verbs
+    mkInput (x:xs) = maybeToRight InvalidVerb
+      $ (\v -> Input (verb v) (Just (T.toLower . T.unwords $ xs)))
+      <$> find (== T.toLower x) verbs
 
 parseCommand :: Input -> World -> Either InputError Command
-parseCommand input world = do
-  let (Verb verb) = _verb input
-  case verb of
+parseCommand input world =
+  case unVerb . _verb $ input of
     "walk" -> do
       room <- maybeToRight UnknownInput
         $ M.lookup (_playerRoom world) (_worldRooms world)
