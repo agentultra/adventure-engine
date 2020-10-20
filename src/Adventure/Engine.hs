@@ -125,6 +125,7 @@ data GameError
   = RoomDoesNotExist (EntityId Room)
   | ItemDoesNotExist (EntityId Item)
   | ItemNotInRoom (EntityId Item) (EntityId Room)
+  | ItemNotInInventory ItemName (EntityId Item)
   | ExitDoesNotExist (EntityId Exit)
   | SpaceWizard
   deriving (Eq, Show)
@@ -137,7 +138,8 @@ update world = \case
   Drop itemName itemId                  -> dropTo world itemName itemId
   ExamineInventory itemName itemId ->
     examineInInventory world itemName itemId
-  ExamineRoom itemName itemId           -> undefined
+  ExamineRoom itemName itemId           ->
+    examineInRoom world itemName itemId
 
 walkTo :: World -> EntityId Exit -> Either GameError World
 walkTo world@(World rooms _ exits playerRoom _ _) exitId = do
@@ -197,7 +199,14 @@ examineInRoom world itemName itemId = do
   pure $ world { _logMessages = msgs <> [_itemDescription item] }
 
 examineInInventory :: World -> ItemName -> EntityId Item -> Either GameError World
-examineInInventory = undefined
+examineInInventory world itemName itemId = do
+  let items = _worldItems world
+      msgs  = _logMessages world
+
+  item <- maybeToRight (ItemNotInInventory itemName itemId) $
+    M.lookup itemId items
+
+  pure $ world { _logMessages = msgs <> [_itemDescription item] }
 
 -- M.update (const Nothing) itemName (_roomItems room)
 render :: World -> Either GameError Text
