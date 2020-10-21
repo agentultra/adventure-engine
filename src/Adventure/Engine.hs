@@ -3,6 +3,8 @@
 
 module Adventure.Engine where
 
+import Data.Bifunctor
+import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Maybe
@@ -51,6 +53,11 @@ data World
   , _logMessages     :: [Text]
   }
   deriving (Eq, Show)
+
+newtype GameState
+  = GameState
+  { _gameStateCommands :: [Command']
+  }
 
 frontPorch :: Room
 frontPorch = Room
@@ -121,14 +128,113 @@ data Command
   | ExamineRoom ItemName (EntityId Item)
   deriving (Eq, Show)
 
+data Command'
+  = Command'
+  { _commandVerb :: Verb
+  , _commandWith :: World -> [Text] -> Either GameError World
+  }
+
+data Invocation
+  = Invocation
+  { _invokeCommand   :: Command'
+  , _invokeArguments :: [Text]
+  , _invokeResult    :: Either GameError World
+  }
+
+getCommand :: [Command'] -> Verb -> Either InputError Command'
+getCommand legalCommands v@(Verb v') =
+  maybeToRight (InvalidVerb' v) $ find (\(Command' (Verb cv) _) -> T.isPrefixOf v' cv) legalCommands
+
+parse :: Text -> Either InputError (Verb, [Text])
+parse = parseCmd . T.words
+  where
+    parseCmd [] = Left EmptyInput
+    parseCmd (x:xs) = pure (Verb x, xs)
+
+defaultGameState :: GameState
+defaultGameState
+  = GameState
+  [ walkTo'
+  ]
+
+fooCommand :: Command'
+fooCommand = Command' (Verb "foo") handleFoo
+
+handleFoo :: World -> [Text] -> Either GameError World
+handleFoo world _ = pure $ world { _logMessages = _logMessages world <> ["Hello from foo!"] }
+
+
+handle' :: GameState -> World -> Text -> Either GameError World
+handle' game world input = do
+  (v, args) <- first (const MissingCommand) . parse $ input
+  cmd <- first (const $ UnrecognizedCommand v)
+    $ getCommand (_gameStateCommands game) v
+  _commandWith cmd world args
+
 data GameError
   = RoomDoesNotExist (EntityId Room)
   | ItemDoesNotExist (EntityId Item)
   | ItemNotInRoom (EntityId Item) (EntityId Room)
   | ItemNotInInventory ItemName (EntityId Item)
   | ExitDoesNotExist (EntityId Exit)
+  | ExitDoesNotExist' Text
+  | MissingCommand
+  | UnrecognizedCommand Verb
+  | MissingParameter Text
   | SpaceWizard
   deriving (Eq, Show)
+
+type CommandHandler = World -> [Text] -> Either GameError World
+
+walkTo' :: Command'
+walkTo' = Command' (Verb "walk") handleWalk
+  where
+    handleWalk :: CommandHandler
+    handleWalk _ [] = Left $ MissingParameter "missing destination"
+    handleWalk world args = do
+      let exits      = _worldExits world
+          rooms      = _worldRooms world
+          playerRoom = _playerRoom world
+          exitName   = T.unwords . map T.toLower $ args
+
+      room <- maybeToRight SpaceWizard
+        $ M.lookup playerRoom rooms
+      exitId <- maybeToRight
+        (ExitDoesNotExist' exitName)
+        $ M.lookup exitName (_roomExits room)
+      exit <- maybeToRight SpaceWizard $
+        M.lookup exitId exits
+      _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
+        M.lookup (_exitFrom exit) rooms
+      _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
+        M.lookup (_exitTo exit) rooms
+      if _exitFrom exit /= playerRoom
+        then Left SpaceWizard
+        else pure $ world { _playerRoom = _exitTo exit }
+
+pickUp' :: Command'
+pickUp' = Command' (Verb "pickup") handlePickup
+  where
+    handlePickup :: CommandHandler
+    handlePickup = undefined
+
+look' :: Command'
+look' = Command' (Verb "pickup") handlePickup
+  where
+    handlePickup :: CommandHandler
+    handlePickup = undefined
+
+drop' :: Command'
+drop' = Command' (Verb "pickup") handlePickup
+  where
+    handlePickup :: CommandHandler
+    handlePickup = undefined
+
+examine' :: Command'
+examine' = Command' (Verb "pickup") handlePickup
+  where
+    handlePickup :: CommandHandler
+    handlePickup = undefined
 
 update :: World -> Command -> Either GameError World
 update world = \case
@@ -227,8 +333,8 @@ render (World rooms items exits playerRoom playerInv msgs) = do
         Nothing   -> Left $ ExitDoesNotExist exitId
         Just exit -> Right exit
 
-repl :: World -> IO ()
-repl w = do
+repl :: GameState -> World -> IO ()
+repl g w = do
   let initialRender = render w
   case initialRender of
     Left err -> do
@@ -246,17 +352,17 @@ repl w = do
           outputStrLn "Goodbye!"
           pure ()
         Just rawInput ->
-          case parseLine (T.pack rawInput) world of
+          case handle' g world . T.pack $ rawInput of
             Left err -> do
               outputStrLn $ show err
               loop world
-            Right cmd ->
-              case update world cmd of
-                Left err -> do
-                  outputStrLn $ show err
-                  loop world
-                Right world' -> do
-                  displayWorld world'
+            Right world' ->
+              case render world' of
+                Left renderErr -> do
+                  outputStrLn $ show renderErr
+                  loop world'
+                Right rendered -> do
+                  outputStrLn . T.unpack $ rendered
                   loop world'
 
 parseLine :: Text -> World -> Either InputError Command
@@ -303,6 +409,8 @@ data InputError
   | ParseFail
   | UnknownInput
   | UnknownParameter Text
+  | EmptyInput
+  | InvalidVerb' Verb
   deriving (Eq, Show)
 
 instance Exception InputError
