@@ -3,6 +3,8 @@
 
 module Adventure.Engine where
 
+import Debug.Trace
+
 import Data.Bifunctor
 import Data.List
 import Data.Map.Strict (Map)
@@ -155,6 +157,10 @@ defaultGameState :: GameState
 defaultGameState
   = GameState
   [ walkTo'
+  , pickUp'
+  , drop'
+  , look'
+  , examine'
   ]
 
 fooCommand :: Command'
@@ -175,7 +181,9 @@ data GameError
   = RoomDoesNotExist (EntityId Room)
   | ItemDoesNotExist (EntityId Item)
   | ItemNotInRoom (EntityId Item) (EntityId Room)
+  | ItemNotInRoom' Text
   | ItemNotInInventory ItemName (EntityId Item)
+  | ItemNotInInventory' ItemName
   | ExitDoesNotExist (EntityId Exit)
   | ExitDoesNotExist' Text
   | MissingCommand
@@ -216,25 +224,105 @@ pickUp' :: Command'
 pickUp' = Command' (Verb "pickup") handlePickup
   where
     handlePickup :: CommandHandler
-    handlePickup = undefined
+    handlePickup _ [] = Left $ MissingParameter "pickup what?"
+    handlePickup world args = do
+      let itemName = T.unwords . map T.toLower $ args
+          playerRoom = _playerRoom world
+          playerInv = _playerInventory world
+          rooms = _worldRooms world
+          items = _worldItems world
+
+      room <- maybeToRight SpaceWizard $
+        M.lookup (_playerRoom world) (_worldRooms world)
+      itemId <- maybeToRight (ItemNotInRoom' itemName) $
+        M.lookup itemName (_roomItems room)
+      _ <- maybeToRight SpaceWizard $
+        M.lookup playerRoom rooms
+      -- TODO: add a message, update inventory
+      _ <- maybeToRight (ItemDoesNotExist itemId) $
+        M.lookup itemId items
+      pure $ world
+        { _worldRooms = M.adjust (removeItem itemName) playerRoom rooms
+        , _playerInventory = M.insert itemName itemId playerInv
+        }
+    removeItem itemName r = r
+      { _roomItems = M.update (const Nothing) itemName (_roomItems r)
+      }
 
 look' :: Command'
-look' = Command' (Verb "pickup") handlePickup
+look' = Command' (Verb "look") handleLook
   where
-    handlePickup :: CommandHandler
-    handlePickup = undefined
+    handleLook :: CommandHandler
+    handleLook w _ = pure w
 
 drop' :: Command'
-drop' = Command' (Verb "pickup") handlePickup
+drop' = Command' (Verb "drop") handleDrop
   where
-    handlePickup :: CommandHandler
-    handlePickup = undefined
+    handleDrop :: CommandHandler
+    handleDrop _ [] = Left $ MissingParameter "drop what?"
+    handleDrop world args = do
+      let playerPos = _playerRoom world
+          playerInv = _playerInventory world
+          rooms     = _worldRooms world
+          itemName = T.unwords . map T.toLower $ args
+
+      itemId <- maybeToRight (ItemNotInInventory' itemName) $
+        M.lookup itemName (_playerInventory world)
+
+      pure $ world
+        { _worldRooms = M.adjust (addItem itemName itemId) playerPos rooms
+        , _playerInventory = M.delete itemName playerInv
+        }
+    addItem itemName itemId r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
 
 examine' :: Command'
-examine' = Command' (Verb "pickup") handlePickup
+examine' = Command' (Verb "examine") handleExamine
   where
-    handlePickup :: CommandHandler
-    handlePickup = undefined
+    handleExamine :: CommandHandler
+    handleExamine _ [] = Left $ MissingParameter "examine what?"
+    handleExamine world args@(w:ws) = do
+      let playerInv = _playerInventory world
+          items     = _worldItems world
+
+      case (w, ws) of
+        ("my", ws'@(_:_)) -> do
+          let itemName = T.unwords . map T.toLower $ ws'
+          itemId <- maybeToRight (ItemNotInInventory' itemName) $
+            M.lookup itemName playerInv
+          examineInInventory world itemName itemId
+        _ -> do
+          let itemName = T.unwords . map T.toLower $ args
+          room <- maybeToRight SpaceWizard $
+            M.lookup (_playerRoom world) (_worldRooms world)
+          itemId <- maybeToRight (ItemNotInRoom' itemName) $
+            M.lookup itemName (_roomItems room)
+          examineInRoom world itemName itemId
+
+examineInRoom :: World -> ItemName -> EntityId Item -> Either GameError World
+examineInRoom world itemName itemId = do
+  let playerPos = _playerRoom world
+      items     = _worldItems world
+      rooms     = _worldRooms world
+      msgs      = _logMessages world
+
+  room <- maybeToRight (RoomDoesNotExist playerPos) $
+    M.lookup playerPos rooms
+  _ <- maybeToRight (ItemNotInRoom itemId playerPos) $
+    M.lookup itemName (_roomItems room)
+  item <- maybeToRight (ItemDoesNotExist itemId) $
+    M.lookup itemId items
+
+  pure $ world { _logMessages = msgs <> [_itemDescription item] }
+
+examineInInventory :: World -> ItemName -> EntityId Item -> Either GameError World
+examineInInventory world itemName itemId = do
+  let items = _worldItems world
+      msgs  = _logMessages world
+
+  item <- maybeToRight (ItemNotInInventory itemName itemId) $
+    M.lookup itemId items
+
+  pure $ world { _logMessages = msgs <> [_itemDescription item] }
 
 update :: World -> Command -> Either GameError World
 update world = \case
@@ -287,32 +375,6 @@ dropTo world itemName itemId = do
     }
   where
     addItem r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
-
-examineInRoom :: World -> ItemName -> EntityId Item -> Either GameError World
-examineInRoom world itemName itemId = do
-  let playerPos = _playerRoom world
-      items     = _worldItems world
-      rooms     = _worldRooms world
-      msgs      = _logMessages world
-
-  room <- maybeToRight (RoomDoesNotExist playerPos) $
-    M.lookup playerPos rooms
-  _ <- maybeToRight (ItemNotInRoom itemId playerPos) $
-    M.lookup itemName (_roomItems room)
-  item <- maybeToRight (ItemDoesNotExist itemId) $
-    M.lookup itemId items
-
-  pure $ world { _logMessages = msgs <> [_itemDescription item] }
-
-examineInInventory :: World -> ItemName -> EntityId Item -> Either GameError World
-examineInInventory world itemName itemId = do
-  let items = _worldItems world
-      msgs  = _logMessages world
-
-  item <- maybeToRight (ItemNotInInventory itemName itemId) $
-    M.lookup itemId items
-
-  pure $ world { _logMessages = msgs <> [_itemDescription item] }
 
 -- M.update (const Nothing) itemName (_roomItems room)
 render :: World -> Either GameError Text
