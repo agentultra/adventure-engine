@@ -3,13 +3,10 @@
 
 module Adventure.Engine where
 
-import Debug.Trace
-
 import Data.Bifunctor
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -58,7 +55,7 @@ data World
 
 newtype GameState
   = GameState
-  { _gameStateCommands :: [Command']
+  { _gameStateCommands :: [Command]
   }
 
 frontPorch :: Room
@@ -122,35 +119,19 @@ renderRoom (Room name desc _ _) items exits invItems msgs = T.unlines
 type ItemName = Text
 
 data Command
-  = Walk (EntityId Exit)
-  | PickUp ItemName (EntityId Item)
-  | Look
-  | Drop ItemName (EntityId Item)
-  | ExamineInventory ItemName (EntityId Item)
-  | ExamineRoom ItemName (EntityId Item)
-  deriving (Eq, Show)
-
-data Command'
-  = Command'
+  = Command
   { _commandVerb :: Verb
   , _commandWith :: World -> [Text] -> Either GameError World
   }
 
-data Invocation
-  = Invocation
-  { _invokeCommand   :: Command'
-  , _invokeArguments :: [Text]
-  , _invokeResult    :: Either GameError World
-  }
-
-getCommand :: [Command'] -> Verb -> Either InputError Command'
+getCommand :: [Command] -> Verb -> Either GameError Command
 getCommand legalCommands v@(Verb v') =
-  maybeToRight (InvalidVerb' v) $ find (\(Command' (Verb cv) _) -> T.isPrefixOf v' cv) legalCommands
+  maybeToRight (UnrecognizedCommand v) $ find (\(Command (Verb cv) _) -> T.isPrefixOf v' cv) legalCommands
 
-parse :: Text -> Either InputError (Verb, [Text])
+parse :: Text -> Either GameError (Verb, [Text])
 parse = parseCmd . T.words
   where
-    parseCmd [] = Left EmptyInput
+    parseCmd [] = Left MissingCommand
     parseCmd (x:xs) = pure (Verb x, xs)
 
 defaultGameState :: GameState
@@ -162,13 +143,6 @@ defaultGameState
   , look'
   , examine'
   ]
-
-fooCommand :: Command'
-fooCommand = Command' (Verb "foo") handleFoo
-
-handleFoo :: World -> [Text] -> Either GameError World
-handleFoo world _ = pure $ world { _logMessages = _logMessages world <> ["Hello from foo!"] }
-
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
@@ -194,8 +168,8 @@ data GameError
 
 type CommandHandler = World -> [Text] -> Either GameError World
 
-walkTo' :: Command'
-walkTo' = Command' (Verb "walk") handleWalk
+walkTo' :: Command
+walkTo' = Command (Verb "walk") handleWalk
   where
     handleWalk :: CommandHandler
     handleWalk _ [] = Left $ MissingParameter "missing destination"
@@ -220,8 +194,8 @@ walkTo' = Command' (Verb "walk") handleWalk
         then Left SpaceWizard
         else pure $ world { _playerRoom = _exitTo exit }
 
-pickUp' :: Command'
-pickUp' = Command' (Verb "pickup") handlePickup
+pickUp' :: Command
+pickUp' = Command (Verb "pickup") handlePickup
   where
     handlePickup :: CommandHandler
     handlePickup _ [] = Left $ MissingParameter "pickup what?"
@@ -238,7 +212,6 @@ pickUp' = Command' (Verb "pickup") handlePickup
         M.lookup itemName (_roomItems room)
       _ <- maybeToRight SpaceWizard $
         M.lookup playerRoom rooms
-      -- TODO: add a message, update inventory
       _ <- maybeToRight (ItemDoesNotExist itemId) $
         M.lookup itemId items
       pure $ world
@@ -249,14 +222,14 @@ pickUp' = Command' (Verb "pickup") handlePickup
       { _roomItems = M.update (const Nothing) itemName (_roomItems r)
       }
 
-look' :: Command'
-look' = Command' (Verb "look") handleLook
+look' :: Command
+look' = Command (Verb "look") handleLook
   where
     handleLook :: CommandHandler
     handleLook w _ = pure w
 
-drop' :: Command'
-drop' = Command' (Verb "drop") handleDrop
+drop' :: Command
+drop' = Command (Verb "drop") handleDrop
   where
     handleDrop :: CommandHandler
     handleDrop _ [] = Left $ MissingParameter "drop what?"
@@ -275,8 +248,8 @@ drop' = Command' (Verb "drop") handleDrop
         }
     addItem itemName itemId r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
 
-examine' :: Command'
-examine' = Command' (Verb "examine") handleExamine
+examine' :: Command
+examine' = Command (Verb "examine") handleExamine
   where
     handleExamine :: CommandHandler
     handleExamine _ [] = Left $ MissingParameter "examine what?"
@@ -324,17 +297,6 @@ examineInInventory world itemName itemId = do
 
   pure $ world { _logMessages = msgs <> [_itemDescription item] }
 
-update :: World -> Command -> Either GameError World
-update world = \case
-  Walk exitId                           -> walkTo world exitId
-  PickUp itemName itemId                -> pickUp world itemName itemId
-  Look                                  -> pure world
-  Drop itemName itemId                  -> dropTo world itemName itemId
-  ExamineInventory itemName itemId ->
-    examineInInventory world itemName itemId
-  ExamineRoom itemName itemId           ->
-    examineInRoom world itemName itemId
-
 walkTo :: World -> EntityId Exit -> Either GameError World
 walkTo world@(World rooms _ exits playerRoom _ _) exitId = do
   exit <- maybeToRight (ExitDoesNotExist exitId) $
@@ -351,7 +313,6 @@ pickUp :: World -> ItemName -> EntityId Item -> Either GameError World
 pickUp world@(World rooms items _ playerRoom playerInv _) itemName itemId = do
   _ <- maybeToRight SpaceWizard $
     M.lookup playerRoom rooms
-  -- TODO: add a message, update inventory
   _ <- maybeToRight (ItemDoesNotExist itemId) $
     M.lookup itemId items
   pure $ world
@@ -376,7 +337,6 @@ dropTo world itemName itemId = do
   where
     addItem r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
 
--- M.update (const Nothing) itemName (_roomItems room)
 render :: World -> Either GameError Text
 render (World rooms items exits playerRoom playerInv msgs) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
@@ -427,11 +387,6 @@ repl g w = do
                   outputStrLn . T.unpack $ rendered
                   loop world'
 
-parseLine :: Text -> World -> Either InputError Command
-parseLine raw world = do
-  input <- parseInput raw
-  parseCommand input world
-
 displayWorld :: World -> InputT IO ()
 displayWorld world = case render world of
   Left err       -> outputStrLn $ show err
@@ -439,107 +394,6 @@ displayWorld world = case render world of
 
 newtype Verb = Verb { unVerb :: Text }
   deriving (Eq, Show)
-
-verb :: Text -> Either InputError Verb
-verb v
-  | T.length v > 0 =
-    case filter (T.isPrefixOf . T.toLower $ v) verbs of
-      []      -> Left InvalidVerb
-      [v']    -> Right $ Verb v'
-      (_:_:_) -> Left AmbiguousVerb
-  | otherwise = Left InvalidVerb
-
-verbs :: [Text]
-verbs = ["look", "walk", "pickup", "drop", "examine"]
-
-newtype Preposition = Preposition { unPreposition :: Text }
-  deriving (Eq, Show)
-
-preposition :: Text -> Either InputError Preposition
-preposition p = case filter (== T.toLower p) prepositions of
-  []   -> Left InvalidPreposition
-  [p'] -> Right $ Preposition p'
-  _    -> Left InvalidPreposition
-
-prepositions :: [Text]
-prepositions = ["my"]
-
-data InputError
-  = InvalidVerb
-  | AmbiguousVerb
-  | InvalidPreposition
-  | ParseFail
-  | UnknownInput
-  | UnknownParameter Text
-  | EmptyInput
-  | InvalidVerb' Verb
-  deriving (Eq, Show)
-
-instance Exception InputError
-
-data Input
-  = Input
-  { _verb        :: Verb
-  , _preposition :: Maybe Preposition
-  , _parameter   :: Maybe Text
-  }
-  deriving (Eq, Show)
-
-parseInput :: Text -> Either InputError Input
-parseInput = mkInput . T.split (==' ')
-  where
-    mkInput [] = Left ParseFail
-    mkInput [x] = do
-      v <- verb x
-      pure $ Input v Nothing Nothing
-    mkInput (x:y:ys) = do
-      v <- verb x
-      case preposition y of
-        Left _     -> pure $ Input v Nothing (Just (T.toLower . T.unwords $ y : ys))
-        Right prep -> pure $ Input v (Just prep) (Just (T.toLower . T.unwords $ ys))
-
-parseCommand :: Input -> World -> Either InputError Command
-parseCommand input world =
-  case unVerb . _verb $ input of
-    "walk" -> do
-      room <- maybeToRight UnknownInput
-        $ M.lookup (_playerRoom world) (_worldRooms world)
-      destName <- maybeToRight UnknownInput $ _parameter input
-      exitId <- maybeToRight
-        (UnknownParameter . fromJust $ _parameter input)
-        $ M.lookup destName (_roomExits room)
-      pure $ Walk exitId
-    "look" -> pure Look
-    "pickup" -> do
-      room <- maybeToRight UnknownInput $
-        M.lookup (_playerRoom world) (_worldRooms world)
-      itemName <- maybeToRight UnknownInput $ _parameter input
-      itemId <- maybeToRight UnknownInput $
-        M.lookup itemName (_roomItems room)
-      pure $ PickUp itemName itemId
-    "drop" -> do
-      itemName <- maybeToRight UnknownInput $ _parameter input
-      itemId <- maybeToRight (UnknownParameter itemName) $
-        M.lookup itemName (_playerInventory world)
-      pure $ Drop itemName itemId
-    "examine" -> do
-      itemName <- maybeToRight UnknownInput $ _parameter input
-      case _preposition input of
-        Nothing -> do
-          room <- maybeToRight UnknownInput $
-            M.lookup (_playerRoom world) (_worldRooms world)
-          itemId <- maybeToRight UnknownInput $
-            M.lookup itemName (_roomItems room)
-          pure $ ExamineRoom itemName itemId
-        Just _  -> do
-          itemId <- maybeToRight (UnknownParameter itemName) $
-            M.lookup itemName (_playerInventory world)
-          pure $ ExamineInventory itemName itemId
-    _ -> Left InvalidVerb
-{-
-walk north
-pickup shovel
--}
 
 -- Utilities
 
