@@ -226,7 +226,19 @@ look :: Command
 look = Command (Verb "look") handleLook
   where
     handleLook :: CommandHandler
-    handleLook w _ = pure w
+    handleLook w [] = pure w
+    handleLook w args = do
+      let exitName = T.unwords . map T.toLower $ args
+          rooms = _worldRooms w
+          exits = _worldExits w
+
+      room <- maybeToRight SpaceWizard $
+        M.lookup (_playerRoom w) rooms
+      exitId <- maybeToRight SpaceWizard $
+        M.lookup exitName (_roomExits room)
+      exit <- maybeToRight SpaceWizard $
+        M.lookup exitId exits
+      pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
 
 dropTo :: Command
 dropTo = Command (Verb "drop") handleDrop
