@@ -137,11 +137,11 @@ parse = parseCmd . T.words
 defaultGameState :: GameState
 defaultGameState
   = GameState
-  [ walkTo'
-  , pickUp'
-  , drop'
-  , look'
-  , examine'
+  [ walkTo
+  , pickUp
+  , dropTo
+  , look
+  , examine
   ]
 
 handle' :: GameState -> World -> Text -> Either GameError World
@@ -168,8 +168,8 @@ data GameError
 
 type CommandHandler = World -> [Text] -> Either GameError World
 
-walkTo' :: Command
-walkTo' = Command (Verb "walk") handleWalk
+walkTo :: Command
+walkTo = Command (Verb "walk") handleWalk
   where
     handleWalk :: CommandHandler
     handleWalk _ [] = Left $ MissingParameter "missing destination"
@@ -194,8 +194,8 @@ walkTo' = Command (Verb "walk") handleWalk
         then Left SpaceWizard
         else pure $ world { _playerRoom = _exitTo exit }
 
-pickUp' :: Command
-pickUp' = Command (Verb "pickup") handlePickup
+pickUp :: Command
+pickUp = Command (Verb "pickup") handlePickup
   where
     handlePickup :: CommandHandler
     handlePickup _ [] = Left $ MissingParameter "pickup what?"
@@ -222,14 +222,14 @@ pickUp' = Command (Verb "pickup") handlePickup
       { _roomItems = M.update (const Nothing) itemName (_roomItems r)
       }
 
-look' :: Command
-look' = Command (Verb "look") handleLook
+look :: Command
+look = Command (Verb "look") handleLook
   where
     handleLook :: CommandHandler
     handleLook w _ = pure w
 
-drop' :: Command
-drop' = Command (Verb "drop") handleDrop
+dropTo :: Command
+dropTo = Command (Verb "drop") handleDrop
   where
     handleDrop :: CommandHandler
     handleDrop _ [] = Left $ MissingParameter "drop what?"
@@ -248,14 +248,13 @@ drop' = Command (Verb "drop") handleDrop
         }
     addItem itemName itemId r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
 
-examine' :: Command
-examine' = Command (Verb "examine") handleExamine
+examine :: Command
+examine = Command (Verb "examine") handleExamine
   where
     handleExamine :: CommandHandler
     handleExamine _ [] = Left $ MissingParameter "examine what?"
     handleExamine world args@(w:ws) = do
       let playerInv = _playerInventory world
-          items     = _worldItems world
 
       case (w, ws) of
         ("my", ws'@(_:_)) -> do
@@ -296,46 +295,6 @@ examineInInventory world itemName itemId = do
     M.lookup itemId items
 
   pure $ world { _logMessages = msgs <> [_itemDescription item] }
-
-walkTo :: World -> EntityId Exit -> Either GameError World
-walkTo world@(World rooms _ exits playerRoom _ _) exitId = do
-  exit <- maybeToRight (ExitDoesNotExist exitId) $
-    M.lookup exitId exits
-  _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
-    M.lookup (_exitFrom exit) rooms
-  _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
-    M.lookup (_exitTo exit) rooms
-  if _exitFrom exit /= playerRoom
-    then Left SpaceWizard
-    else pure $ world { _playerRoom = _exitTo exit }
-
-pickUp :: World -> ItemName -> EntityId Item -> Either GameError World
-pickUp world@(World rooms items _ playerRoom playerInv _) itemName itemId = do
-  _ <- maybeToRight SpaceWizard $
-    M.lookup playerRoom rooms
-  _ <- maybeToRight (ItemDoesNotExist itemId) $
-    M.lookup itemId items
-  pure $ world
-    { _worldRooms = M.adjust removeItem playerRoom rooms
-    , _playerInventory = M.insert itemName itemId playerInv
-    }
-  where
-    removeItem r = r
-      { _roomItems = M.update (const Nothing) itemName (_roomItems r)
-      }
-
-dropTo :: World -> ItemName -> EntityId Item -> Either GameError World
-dropTo world itemName itemId = do
-  let playerPos = _playerRoom world
-      playerInv = _playerInventory world
-      rooms     = _worldRooms world
-
-  pure $ world
-    { _worldRooms = M.adjust addItem playerPos rooms
-    , _playerInventory = M.delete itemName playerInv
-    }
-  where
-    addItem r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
 
 render :: World -> Either GameError Text
 render (World rooms items exits playerRoom playerInv msgs) = do
