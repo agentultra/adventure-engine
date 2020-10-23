@@ -42,11 +42,11 @@ item size = ObjectItem . Item size
 data Container
   = Container
   { _containerSize :: Int
-  , _containerItems :: Map ItemName GameObject
+  , _containerItems :: Map ItemName (EntityId GameObject)
   }
   deriving (Eq, Show)
 
-container :: Int -> Map ItemName GameObject -> Object
+container :: Int -> Map ItemName (EntityId GameObject) -> Object
 container size = ObjectContainer . Container size
 
 data Object
@@ -115,7 +115,7 @@ magicBrolly
 bucket :: GameObject
 bucket
   = GameObject "Brolly Bucket" "A rusting, iron bucket. There may be some brollies in it."
-  $ container 4 (M.fromList [("brolly", magicBrolly)])
+  $ container 4 (M.fromList [("brolly", EntityId 7)])
 
 frontDoorOutside :: Exit
 frontDoorOutside = Exit
@@ -200,6 +200,7 @@ data GameError
   | ObjectDoesNotExist Text
   | ObjectNotInRoom Text
   | ObjectNotInInventory Text
+  | InvalidObjectParameter Text
   | ExitDoesNotExist (EntityId Exit)
   | ExitDoesNotExist' Text
   | MissingCommand
@@ -269,18 +270,43 @@ look = Command (Verb "look") handleLook
   where
     handleLook :: CommandHandler
     handleLook w [] = pure w
-    handleLook w args = do
-      let exitName = T.unwords . map T.toLower $ args
-          rooms = _worldRooms w
+    handleLook w args =
+      let rooms = _worldRooms w
           exits = _worldExits w
+      in case peek "in" args of
+        Just args' -> lookInContainer w . keyArg $ args'
+        Nothing -> do
+          let exitName = keyArg args
+          room <- maybeToRight SpaceWizard $
+            M.lookup (_playerRoom w) rooms
+          exitId <- maybeToRight SpaceWizard $
+            M.lookup exitName (_roomExits room)
+          exit <- maybeToRight SpaceWizard $
+            M.lookup exitId exits
+          pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
 
-      room <- maybeToRight SpaceWizard $
-        M.lookup (_playerRoom w) rooms
-      exitId <- maybeToRight SpaceWizard $
-        M.lookup exitName (_roomExits room)
-      exit <- maybeToRight SpaceWizard $
-        M.lookup exitId exits
-      pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
+lookInContainer :: World -> Text -> Either GameError World
+lookInContainer w containerName = do
+  room <- maybeToRight (RoomDoesNotExist $ _playerRoom w)
+    $ M.lookup (_playerRoom w) (_worldRooms w)
+  containerId <- maybeToRight (ObjectNotInRoom containerName)
+    $ M.lookup containerName (_roomObjects room)
+  container <- maybeToRight (ObjectDoesNotExist containerName)
+    $ M.lookup containerId (_worldObjects w)
+  case _gameObjectObject container of
+    ObjectItem _ -> Left $ InvalidObjectParameter containerName
+    ObjectContainer cont -> do
+      items <- traverse getObject $ M.elems (_containerItems cont)
+      let itemNames = T.intercalate ", " . map _gameObjectName $ items
+      pure $ w
+        { _logMessages = _logMessages w
+          <> ["Inside the " <> containerName <> " you see: " <> itemNames]
+        }
+      where
+        getObject objectId =
+          case M.lookup objectId (_worldObjects w) of
+            Nothing   -> Left $ ObjectDoesNotExist containerName
+            Just item -> Right item
 
 dropTo :: Command
 dropTo = Command (Verb "drop") handleDrop
@@ -411,6 +437,17 @@ newtype Verb = Verb { unVerb :: Text }
   deriving (Eq, Show)
 
 -- Utilities
+
+-- | If the first word matches the head of the list return the rest of
+-- the list otherwise nothing
+peek :: Text -> [Text] -> Maybe [Text]
+peek _ [] = Nothing
+peek word (word':words)
+  | word == word' = Just words
+  | otherwise     = Nothing
+
+keyArg :: [Text] -> Text
+keyArg = T.unwords . map T.toLower
 
 maybeElem :: (Foldable t, Eq a) => a -> t a -> Maybe a
 maybeElem x xs =
