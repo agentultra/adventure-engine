@@ -1,5 +1,10 @@
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Adventure.Engine where
 
@@ -19,17 +24,41 @@ data Room
   = Room
   { _roomName        :: Text
   , _roomDescription :: Text
-  , _roomItems       :: Map Text (EntityId Item)
+  , _roomObjects     :: Map Text (EntityId GameObject)
   , _roomExits       :: Map Text (EntityId Exit)
   }
   deriving (Eq, Show)
 
 data Item
   = Item
-  { _itemName        :: Text
-  , _itemDescription :: Text
-  , _itemSize        :: Int
-  , _itemWeight      :: Int
+  { _itemSize'   :: Int
+  , _itemWeight' :: Int
+  }
+  deriving (Eq, Show)
+
+item :: Int -> Int -> Object
+item size = ObjectItem . Item size
+
+data Container
+  = Container
+  { _containerSize :: Int
+  , _containerItems :: Map ItemName GameObject
+  }
+  deriving (Eq, Show)
+
+container :: Int -> Map ItemName GameObject -> Object
+container size = ObjectContainer . Container size
+
+data Object
+  = ObjectItem Item
+  | ObjectContainer Container
+  deriving (Eq, Show)
+
+data GameObject
+  = GameObject
+  { _gameObjectName        :: Text
+  , _gameObjectDescription :: Text
+  , _gameObjectObject      :: Object
   }
   deriving (Eq, Show)
 
@@ -45,10 +74,10 @@ data Exit
 data World
   = World
   { _worldRooms      :: Map (EntityId Room) Room
-  , _worldItems      :: Map (EntityId Item) Item
+  , _worldObjects    :: Map (EntityId GameObject) GameObject
   , _worldExits      :: Map (EntityId Exit) Exit
   , _playerRoom      :: EntityId Room
-  , _playerInventory :: Map Text (EntityId Item)
+  , _playerInventory :: Map Text (EntityId GameObject)
   , _logMessages     :: [Text]
   }
   deriving (Eq, Show)
@@ -69,14 +98,24 @@ mainHall :: Room
 mainHall = Room
   "Main Hall"
   "The main hall of the house is plastered in yellowing wall paper."
-  M.empty
-  $ M.fromList [("door", EntityId 5)]
+  (M.fromList [("brolly bucket", EntityId 8)])
+  (M.fromList [("door", EntityId 5)])
 
-shovel :: Item
-shovel = Item "Shovel" "A rusted shovel with a wooden handle." 2 4
+shovel :: GameObject
+shovel = GameObject "Shovel" "A rusted shovel with a wooden handle." $ item 2 4
 
-purse :: Item
-purse = Item "Purse" "Weathered, old, leather purse." 1 1
+purse :: GameObject
+purse = GameObject "Purse" "Weathered, old, leather purse." $ item 1 1
+
+magicBrolly :: GameObject
+magicBrolly
+  = GameObject "Brolly" "A plain, black brolly. The head of a dragon is carved into the wooden handle."
+  $ item 1 1
+
+bucket :: GameObject
+bucket
+  = GameObject "Brolly Bucket" "A rusting, iron bucket. There may be some brollies in it."
+  $ container 4 (M.fromList [("brolly", magicBrolly)])
 
 frontDoorOutside :: Exit
 frontDoorOutside = Exit
@@ -95,22 +134,27 @@ frontDoorInside = Exit
 defaultWorld :: World
 defaultWorld = World
   (M.fromList [(EntityId 0, frontPorch), (EntityId 6, mainHall)])
-  (M.fromList [(EntityId 1, shovel), (EntityId 2, purse)])
+  (M.fromList
+   [ (EntityId 1, shovel)
+   , (EntityId 2, purse)
+   , (EntityId 7, magicBrolly)
+   , (EntityId 8, bucket)
+   ])
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
   (EntityId 0)
   M.empty
   mempty
 
-renderRoom :: Room -> [Item] -> [Exit] -> [Item] -> [Text] -> Text
-renderRoom (Room name desc _ _) items exits invItems msgs = T.unlines
+renderRoom :: Room -> [GameObject] -> [Exit] -> [GameObject] -> [Text] -> Text
+renderRoom (Room name desc _ _) objects exits invItems msgs = T.unlines
   [ name
   , "-----------"
   , desc
   , "----------"
   , T.unlines msgs
   , "----------"
-  , "You see: " <> T.intercalate ", " (_itemName <$> items)
-  , "You are holding: " <> T.intercalate ", " (_itemName <$> invItems)
+  , "You see: " <> T.intercalate ", " (_gameObjectName <$> objects)
+  , "You are holding: " <> T.intercalate ", " (_gameObjectName <$> invItems)
   , "Possible exits: " <> T.intercalate ", " (_exitName <$> exits)
   ]
 
@@ -153,11 +197,9 @@ handle' game world input = do
 
 data GameError
   = RoomDoesNotExist (EntityId Room)
-  | ItemDoesNotExist (EntityId Item)
-  | ItemNotInRoom (EntityId Item) (EntityId Room)
-  | ItemNotInRoom' Text
-  | ItemNotInInventory ItemName (EntityId Item)
-  | ItemNotInInventory' ItemName
+  | ObjectDoesNotExist Text
+  | ObjectNotInRoom Text
+  | ObjectNotInInventory Text
   | ExitDoesNotExist (EntityId Exit)
   | ExitDoesNotExist' Text
   | MissingCommand
@@ -200,26 +242,26 @@ pickUp = Command (Verb "pickup") handlePickup
     handlePickup :: CommandHandler
     handlePickup _ [] = Left $ MissingParameter "pickup what?"
     handlePickup world args = do
-      let itemName = T.unwords . map T.toLower $ args
+      let objectName = T.unwords . map T.toLower $ args
           playerRoom = _playerRoom world
           playerInv = _playerInventory world
           rooms = _worldRooms world
-          items = _worldItems world
+          objects = _worldObjects world
 
       room <- maybeToRight SpaceWizard $
         M.lookup (_playerRoom world) (_worldRooms world)
-      itemId <- maybeToRight (ItemNotInRoom' itemName) $
-        M.lookup itemName (_roomItems room)
+      objectId <- maybeToRight (ObjectNotInRoom objectName) $
+        M.lookup objectName (_roomObjects room)
       _ <- maybeToRight SpaceWizard $
         M.lookup playerRoom rooms
-      _ <- maybeToRight (ItemDoesNotExist itemId) $
-        M.lookup itemId items
+      _ <- maybeToRight (ObjectDoesNotExist objectName) $
+        M.lookup objectId objects
       pure $ world
-        { _worldRooms = M.adjust (removeItem itemName) playerRoom rooms
-        , _playerInventory = M.insert itemName itemId playerInv
+        { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
+        , _playerInventory = M.insert objectName objectId playerInv
         }
-    removeItem itemName r = r
-      { _roomItems = M.update (const Nothing) itemName (_roomItems r)
+    removeItem objectName r = r
+      { _roomObjects = M.update (const Nothing) objectName (_roomObjects r)
       }
 
 look :: Command
@@ -249,16 +291,16 @@ dropTo = Command (Verb "drop") handleDrop
       let playerPos = _playerRoom world
           playerInv = _playerInventory world
           rooms     = _worldRooms world
-          itemName = T.unwords . map T.toLower $ args
+          objectName = T.unwords . map T.toLower $ args
 
-      itemId <- maybeToRight (ItemNotInInventory' itemName) $
-        M.lookup itemName (_playerInventory world)
+      objectId <- maybeToRight (ObjectNotInInventory objectName) $
+        M.lookup objectName (_playerInventory world)
 
       pure $ world
-        { _worldRooms = M.adjust (addItem itemName itemId) playerPos rooms
-        , _playerInventory = M.delete itemName playerInv
+        { _worldRooms = M.adjust (addObject objectName objectId) playerPos rooms
+        , _playerInventory = M.delete objectName playerInv
         }
-    addItem itemName itemId r = r { _roomItems = M.insert itemName itemId (_roomItems r) }
+    addObject objectName objectId r = r { _roomObjects = M.insert objectName objectId (_roomObjects r) }
 
 examine :: Command
 examine = Command (Verb "examine") handleExamine
@@ -270,56 +312,58 @@ examine = Command (Verb "examine") handleExamine
 
       case (w, ws) of
         ("my", ws'@(_:_)) -> do
-          let itemName = T.unwords . map T.toLower $ ws'
-          itemId <- maybeToRight (ItemNotInInventory' itemName) $
-            M.lookup itemName playerInv
-          examineInInventory world itemName itemId
+          let objectName = T.unwords . map T.toLower $ ws'
+          objectId <- maybeToRight (ObjectNotInInventory objectName) $
+            M.lookup objectName playerInv
+          examineInInventory world objectName objectId
         _ -> do
-          let itemName = T.unwords . map T.toLower $ args
+          let objectName = T.unwords . map T.toLower $ args
           room <- maybeToRight SpaceWizard $
             M.lookup (_playerRoom world) (_worldRooms world)
-          itemId <- maybeToRight (ItemNotInRoom' itemName) $
-            M.lookup itemName (_roomItems room)
-          examineInRoom world itemName itemId
+          objectId <- maybeToRight (ObjectNotInRoom objectName) $
+            M.lookup objectName (_roomObjects room)
+          examineInRoom world objectName objectId
 
-examineInRoom :: World -> ItemName -> EntityId Item -> Either GameError World
-examineInRoom world itemName itemId = do
+examineInRoom :: World -> ItemName -> EntityId GameObject -> Either GameError World
+examineInRoom world objectName objectId = do
   let playerPos = _playerRoom world
-      items     = _worldItems world
+      objects     = _worldObjects world
       rooms     = _worldRooms world
       msgs      = _logMessages world
 
   room <- maybeToRight (RoomDoesNotExist playerPos) $
     M.lookup playerPos rooms
-  _ <- maybeToRight (ItemNotInRoom itemId playerPos) $
-    M.lookup itemName (_roomItems room)
-  item <- maybeToRight (ItemDoesNotExist itemId) $
-    M.lookup itemId items
+  _ <- maybeToRight (ObjectNotInRoom objectName) $
+    M.lookup objectName (_roomObjects room)
+  object <- maybeToRight (ObjectDoesNotExist objectName) $
+    M.lookup objectId objects
 
-  pure $ world { _logMessages = msgs <> [_itemDescription item] }
+  pure $ world { _logMessages = msgs <> [_gameObjectDescription object] }
 
-examineInInventory :: World -> ItemName -> EntityId Item -> Either GameError World
-examineInInventory world itemName itemId = do
-  let items = _worldItems world
+examineInInventory :: World -> ItemName -> EntityId GameObject -> Either GameError World
+examineInInventory world objectName objectId = do
+  let objects = _worldObjects world
       msgs  = _logMessages world
 
-  item <- maybeToRight (ItemNotInInventory itemName itemId) $
-    M.lookup itemId items
+  object <- maybeToRight (ObjectNotInInventory objectName) $
+    M.lookup objectId objects
 
-  pure $ world { _logMessages = msgs <> [_itemDescription item] }
+  pure $ world { _logMessages = msgs <> [_gameObjectDescription object] }
 
 render :: World -> Either GameError Text
-render (World rooms items exits playerRoom playerInv msgs) = do
+render (World rooms objects exits playerRoom playerInv msgs) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
     M.lookup playerRoom rooms
-  items' <- traverse getItem $ M.elems (_roomItems room)
+  objects' <- traverse getItem $ M.elems (_roomObjects room)
   exits' <- traverse getExit $ M.elems . _roomExits $ room
-  invItems <- traverse getItem $ M.elems playerInv
-  pure $ renderRoom room items' exits' invItems msgs
+  invObjects <- traverse getItem $ M.elems playerInv
+  pure $ renderRoom room objects' exits' invObjects msgs
   where
-    getItem itemId  =
-      case M.lookup itemId items of
-       Nothing   -> Left $ ItemDoesNotExist itemId
+    getItem objectId  =
+      case M.lookup objectId objects of
+       Nothing   ->
+         Left $ ObjectDoesNotExist
+         ("Error missing rendering object: " <> (T.pack . show $ objectId))
        Just item -> Right item
     getExit exitId =
       case M.lookup exitId exits of
