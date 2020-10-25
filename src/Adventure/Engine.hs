@@ -81,6 +81,13 @@ currentRoom :: World -> Either GameError Room
 currentRoom w = maybeToRight SpaceWizard
   $ M.lookup (_playerRoom w) (_worldRooms w)
 
+exitCurrentRoom :: Text -> World -> Either GameError Exit
+exitCurrentRoom exitName w = do
+  room <- currentRoom w
+  exitId <- maybeToRight (ExitDoesNotExist' exitName)
+    $ M.lookup exitName (_roomExits room)
+  maybeToRight SpaceWizard $ M.lookup exitId (_worldExits w)
+
 newtype GameState
   = GameState
   { _gameStateCommands :: [Command]
@@ -218,17 +225,11 @@ walkTo = Command (Verb "walk") handleWalk
     handleWalk :: CommandHandler
     handleWalk _ [] = Left $ MissingParameter "missing destination"
     handleWalk world args = do
-      let exits      = _worldExits world
-          rooms      = _worldRooms world
+      let rooms      = _worldRooms world
           playerRoom = _playerRoom world
           exitName   = keyArg args
 
-      room <- currentRoom world
-      exitId <- maybeToRight
-        (ExitDoesNotExist' exitName)
-        $ M.lookup exitName (_roomExits room)
-      exit <- maybeToRight SpaceWizard $
-        M.lookup exitId exits
+      exit <- exitCurrentRoom exitName world
       _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
         M.lookup (_exitFrom exit) rooms
       _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
