@@ -181,6 +181,7 @@ defaultGameState
   , dropTo
   , look
   , examine
+  , takeFrom
   ]
 
 handle' :: GameState -> World -> Text -> Either GameError World
@@ -195,6 +196,7 @@ data GameError
   | ObjectDoesNotExist Text
   | ObjectNotInRoom Text
   | ObjectNotInInventory Text
+  | ObjectNotInContainer Text
   | InvalidObjectParameter Text
   | ExitDoesNotExist (EntityId Exit)
   | ExitDoesNotExist' Text
@@ -286,9 +288,9 @@ lookInContainer w containerName = do
     $ M.lookup (_playerRoom w) (_worldRooms w)
   containerId <- maybeToRight (ObjectNotInRoom containerName)
     $ M.lookup containerName (_roomObjects room)
-  container <- maybeToRight (ObjectDoesNotExist containerName)
+  container' <- maybeToRight (ObjectDoesNotExist containerName)
     $ M.lookup containerId (_worldObjects w)
-  case _gameObjectObject container of
+  case _gameObjectObject container' of
     ObjectItem _ -> Left $ InvalidObjectParameter containerName
     ObjectContainer cont -> do
       items <- traverse getObject $ M.elems (_containerItems cont)
@@ -300,8 +302,8 @@ lookInContainer w containerName = do
       where
         getObject objectId =
           case M.lookup objectId (_worldObjects w) of
-            Nothing   -> Left $ ObjectDoesNotExist containerName
-            Just item -> Right item
+            Nothing    -> Left $ ObjectDoesNotExist containerName
+            Just item' -> Right item'
 
 dropTo :: Command
 dropTo = Command (Verb "drop") handleDrop
@@ -371,6 +373,38 @@ examineInInventory world objectName objectId = do
 
   pure $ world { _logMessages = msgs <> [_gameObjectDescription object] }
 
+takeFrom :: Command
+takeFrom = Command (Verb "take") handleTake
+  where
+    handleTake :: CommandHandler
+    handleTake w args = case splitAtWord "from" args of
+      Nothing       -> Left $ MissingParameter "take what from what?"
+      Just (xs, ys) -> do
+        let containerName = keyArg ys
+            itemName      = keyArg xs
+            playerLoc     = _playerRoom w
+            playerInv     = _playerInventory w
+            rooms         = _worldRooms w
+            objects       = _worldObjects w
+
+        room <- maybeToRight SpaceWizard $
+          M.lookup playerLoc rooms
+        objectId <- maybeToRight (ObjectNotInRoom containerName) $
+          M.lookup containerName (_roomObjects room)
+        object <- maybeToRight (ObjectDoesNotExist containerName) $
+          M.lookup objectId objects
+        case _gameObjectObject object of
+          ObjectItem _ -> Left SpaceWizard
+          ObjectContainer container' -> do
+            itemId <- maybeToRight (ObjectNotInContainer itemName) $
+              M.lookup itemName (_containerItems container')
+            let object' = object { _gameObjectObject = ObjectContainer container' { _containerItems = M.delete itemName (_containerItems container') } }
+
+            pure $ w
+              { _worldObjects = M.insert objectId object' objects
+              , _playerInventory = M.insert itemName itemId playerInv
+              }
+
 render :: World -> Either GameError Text
 render (World rooms objects exits playerRoom playerInv msgs) = do
   room <- maybeToRight (RoomDoesNotExist playerRoom) $
@@ -382,10 +416,10 @@ render (World rooms objects exits playerRoom playerInv msgs) = do
   where
     getItem objectId  =
       case M.lookup objectId objects of
-       Nothing   ->
+       Nothing ->
          Left $ ObjectDoesNotExist
          ("Error missing rendering object: " <> (T.pack . show $ objectId))
-       Just item -> Right item
+       Just item' -> Right item'
     getExit exitId =
       case M.lookup exitId exits of
         Nothing   -> Left $ ExitDoesNotExist exitId
@@ -434,12 +468,21 @@ newtype Verb = Verb { unVerb :: Text }
 -- Utilities
 
 -- | If the first word matches the head of the list return the rest of
--- the list otherwise nothing
+-- the list otherwise nothing.
 peek :: Text -> [Text] -> Maybe [Text]
 peek _ [] = Nothing
-peek word (word':words)
-  | word == word' = Just words
+peek word (word':words')
+  | word == word' = Just words'
   | otherwise     = Nothing
+
+-- | If we find the matching word in the input text and more than one
+-- word on each side of it, return the pair of lists otherwise
+-- nothing.
+splitAtWord :: Text -> [Text] -> Maybe ([Text], [Text])
+splitAtWord w ws = case span (/= w) ws of
+  ([], _) -> Nothing
+  (xs, ys) | length ys > 1 -> Just (xs, tail ys)
+           | otherwise     -> Nothing
 
 keyArg :: [Text] -> Text
 keyArg = T.unwords . map T.toLower
