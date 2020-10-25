@@ -77,6 +77,10 @@ data World
   }
   deriving (Eq, Show)
 
+currentRoom :: World -> Either GameError Room
+currentRoom w = maybeToRight SpaceWizard
+  $ M.lookup (_playerRoom w) (_worldRooms w)
+
 newtype GameState
   = GameState
   { _gameStateCommands :: [Command]
@@ -219,8 +223,7 @@ walkTo = Command (Verb "walk") handleWalk
           playerRoom = _playerRoom world
           exitName   = keyArg args
 
-      room <- maybeToRight SpaceWizard
-        $ M.lookup playerRoom rooms
+      room <- currentRoom world
       exitId <- maybeToRight
         (ExitDoesNotExist' exitName)
         $ M.lookup exitName (_roomExits room)
@@ -246,8 +249,7 @@ pickUp = Command (Verb "pickup") handlePickup
           rooms = _worldRooms world
           objects = _worldObjects world
 
-      room <- maybeToRight SpaceWizard $
-        M.lookup (_playerRoom world) (_worldRooms world)
+      room <- currentRoom world
       objectId <- maybeToRight (ObjectNotInRoom objectName) $
         M.lookup objectName (_roomObjects room)
       _ <- maybeToRight SpaceWizard $
@@ -268,14 +270,12 @@ look = Command (Verb "look") handleLook
     handleLook :: CommandHandler
     handleLook w [] = pure w
     handleLook w args =
-      let rooms = _worldRooms w
-          exits = _worldExits w
+      let exits = _worldExits w
       in case peek "in" args of
         Just args' -> lookInContainer w . keyArg $ args'
         Nothing -> do
           let exitName = keyArg args
-          room <- maybeToRight SpaceWizard $
-            M.lookup (_playerRoom w) rooms
+          room <- currentRoom w
           exitId <- maybeToRight SpaceWizard $
             M.lookup exitName (_roomExits room)
           exit <- maybeToRight SpaceWizard $
@@ -284,8 +284,7 @@ look = Command (Verb "look") handleLook
 
 lookInContainer :: World -> Text -> Either GameError World
 lookInContainer w containerName = do
-  room <- maybeToRight (RoomDoesNotExist $ _playerRoom w)
-    $ M.lookup (_playerRoom w) (_worldRooms w)
+  room <- currentRoom w
   containerId <- maybeToRight (ObjectNotInRoom containerName)
     $ M.lookup containerName (_roomObjects room)
   container' <- maybeToRight (ObjectDoesNotExist containerName)
@@ -341,21 +340,17 @@ examine = Command (Verb "examine") handleExamine
           examineInInventory world objectName objectId
         _ -> do
           let objectName = keyArg args
-          room <- maybeToRight SpaceWizard $
-            M.lookup (_playerRoom world) (_worldRooms world)
+          room <- currentRoom world
           objectId <- maybeToRight (ObjectNotInRoom objectName) $
             M.lookup objectName (_roomObjects room)
           examineInRoom world objectName objectId
 
 examineInRoom :: World -> ItemName -> EntityId GameObject -> Either GameError World
 examineInRoom world objectName objectId = do
-  let playerPos = _playerRoom world
-      objects     = _worldObjects world
-      rooms     = _worldRooms world
+  let objects     = _worldObjects world
       msgs      = _logMessages world
 
-  room <- maybeToRight (RoomDoesNotExist playerPos) $
-    M.lookup playerPos rooms
+  room <- currentRoom world
   _ <- maybeToRight (ObjectNotInRoom objectName) $
     M.lookup objectName (_roomObjects room)
   object <- maybeToRight (ObjectDoesNotExist objectName) $
@@ -382,13 +377,10 @@ takeFrom = Command (Verb "take") handleTake
       Just (xs, ys) -> do
         let containerName = keyArg ys
             itemName      = keyArg xs
-            playerLoc     = _playerRoom w
             playerInv     = _playerInventory w
-            rooms         = _worldRooms w
             objects       = _worldObjects w
 
-        room <- maybeToRight SpaceWizard $
-          M.lookup playerLoc rooms
+        room <- currentRoom w
         objectId <- maybeToRight (ObjectNotInRoom containerName) $
           M.lookup containerName (_roomObjects room)
         object <- maybeToRight (ObjectDoesNotExist containerName) $
@@ -406,9 +398,8 @@ takeFrom = Command (Verb "take") handleTake
               }
 
 render :: World -> Either GameError Text
-render (World rooms objects exits playerRoom playerInv msgs) = do
-  room <- maybeToRight (RoomDoesNotExist playerRoom) $
-    M.lookup playerRoom rooms
+render w@(World _ objects exits _ playerInv msgs) = do
+  room <- currentRoom w
   objects' <- traverse getItem $ M.elems (_roomObjects room)
   exits' <- traverse getExit $ M.elems . _roomExits $ room
   invObjects <- traverse getItem $ M.elems playerInv
@@ -467,7 +458,7 @@ newtype Verb = Verb { unVerb :: Text }
 
 -- Utilities
 
--- | If the first word matches the head of the list return the rest of
+-- | if the first word matches the head of the list return the rest of
 -- the list otherwise nothing.
 peek :: Text -> [Text] -> Maybe [Text]
 peek _ [] = Nothing
