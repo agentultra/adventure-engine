@@ -217,7 +217,7 @@ walkTo = Command (Verb "walk") handleWalk
       let exits      = _worldExits world
           rooms      = _worldRooms world
           playerRoom = _playerRoom world
-          exitName   = T.unwords . map T.toLower $ args
+          exitName   = keyArg args
 
       room <- maybeToRight SpaceWizard
         $ M.lookup playerRoom rooms
@@ -240,7 +240,7 @@ pickUp = Command (Verb "pickup") handlePickup
     handlePickup :: CommandHandler
     handlePickup _ [] = Left $ MissingParameter "pickup what?"
     handlePickup world args = do
-      let objectName = T.unwords . map T.toLower $ args
+      let objectName = keyArg args
           playerRoom = _playerRoom world
           playerInv = _playerInventory world
           rooms = _worldRooms world
@@ -314,7 +314,7 @@ dropTo = Command (Verb "drop") handleDrop
       let playerPos = _playerRoom world
           playerInv = _playerInventory world
           rooms     = _worldRooms world
-          objectName = T.unwords . map T.toLower $ args
+          objectName = keyArg args
 
       objectId <- maybeToRight (ObjectNotInInventory objectName) $
         M.lookup objectName (_playerInventory world)
@@ -335,12 +335,12 @@ examine = Command (Verb "examine") handleExamine
 
       case (w, ws) of
         ("my", ws'@(_:_)) -> do
-          let objectName = T.unwords . map T.toLower $ ws'
+          let objectName = keyArg ws'
           objectId <- maybeToRight (ObjectNotInInventory objectName) $
             M.lookup objectName playerInv
           examineInInventory world objectName objectId
         _ -> do
-          let objectName = T.unwords . map T.toLower $ args
+          let objectName = keyArg args
           room <- maybeToRight SpaceWizard $
             M.lookup (_playerRoom world) (_worldRooms world)
           objectId <- maybeToRight (ObjectNotInRoom objectName) $
