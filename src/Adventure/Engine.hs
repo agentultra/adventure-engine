@@ -263,13 +263,11 @@ pickUp = Command (Verb "pickup") handlePickup
     handlePickup world args = do
       let objectName = keyArg args
           playerRoom = _playerRoom world
-          playerInv = _playerInventory world
-          rooms = _worldRooms world
-          objects = _worldObjects world
+          playerInv  = _playerInventory world
+          rooms      = _worldRooms world
+          objects    = _worldObjects world
 
-      room <- currentRoom world
-      objectId <- maybeToRight (ObjectNotInRoom objectName) $
-        M.lookup objectName (_roomObjects room)
+      objectId <- getObjectInCurrentRoom world objectName
       _ <- maybeToRight SpaceWizard $
         M.lookup playerRoom rooms
       _ <- maybeToRight (ObjectDoesNotExist objectId) $
