@@ -82,8 +82,8 @@ currentRoom :: World -> Either GameError Room
 currentRoom w = maybeToRight SpaceWizard
   $ M.lookup (_playerRoom w) (_worldRooms w)
 
-exitCurrentRoom :: Text -> World -> Either GameError Exit
-exitCurrentRoom exitName w = do
+exitCurrentRoom :: World -> Text -> Either GameError Exit
+exitCurrentRoom w exitName = do
   room <- currentRoom w
   exitId <- maybeToRight (ExitDoesNotExist' exitName)
     $ M.lookup exitName (_roomExits room)
@@ -246,7 +246,7 @@ walkTo = Command (Verb "walk") handleWalk
           playerRoom = _playerRoom world
           exitName   = keyArg args
 
-      exit <- exitCurrentRoom exitName world
+      exit <- exitCurrentRoom world exitName
       _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
         M.lookup (_exitFrom exit) rooms
       _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
@@ -286,16 +286,11 @@ look = Command (Verb "look") handleLook
     handleLook :: CommandHandler
     handleLook w [] = pure w
     handleLook w args =
-      let exits = _worldExits w
-      in case peek "in" args of
+      case peek "in" args of
         Just args' -> lookInContainer w . keyArg $ args'
         Nothing -> do
           let exitName = keyArg args
-          room <- currentRoom w
-          exitId <- maybeToRight SpaceWizard $
-            M.lookup exitName (_roomExits room)
-          exit <- maybeToRight SpaceWizard $
-            M.lookup exitId exits
+          exit <- exitCurrentRoom w exitName
           pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
 
 lookInContainer :: World -> Text -> Either GameError World
@@ -392,17 +387,12 @@ takeFrom = Command (Verb "take") handleTake
 
 render :: World -> Either GameError Text
 render w@(World _ objects exits _ playerInv msgs) = do
-  room <- currentRoom w
-  objects' <- traverse getItem $ M.elems (_roomObjects room)
-  exits' <- traverse getExit $ M.elems . _roomExits $ room
-  invObjects <- traverse getItem $ M.elems playerInv
+  room       <- currentRoom w
+  objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
+  exits'     <- traverse getExit $ M.elems . _roomExits $ room
+  invObjects <- traverse (getObject w) $ M.elems playerInv
   pure $ renderRoom room objects' exits' invObjects msgs
   where
-    getItem objectId  =
-      case M.lookup objectId objects of
-       Nothing ->
-         Left $ ObjectDoesNotExist objectId
-       Just item' -> Right item'
     getExit exitId =
       case M.lookup exitId exits of
         Nothing   -> Left $ ExitDoesNotExist exitId
