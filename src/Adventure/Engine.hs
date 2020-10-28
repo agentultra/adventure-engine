@@ -1,13 +1,15 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Adventure.Engine where
 
+import Control.Monad.Except
+import Control.Monad.State
 import Data.Bifunctor
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
-import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -105,10 +107,20 @@ getObject w objectId =
   maybeToRight (ObjectDoesNotExist objectId)
   $ M.lookup objectId $ _worldObjects w
 
-newtype GameState
+data GameState
   = GameState
   { _gameStateCommands :: [Command]
+  , _gameWorld :: World
   }
+
+newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
+  deriving
+    ( Applicative
+    , Functor
+    , Monad
+    , MonadState GameState
+    , MonadError GameError
+    )
 
 frontPorch :: Room
 frontPorch = Room
@@ -211,6 +223,7 @@ defaultGameState
   , examine
   , takeFrom
   ]
+  defaultWorld
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do

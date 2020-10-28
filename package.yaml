@@ -28,6 +28,7 @@ library:
   dependencies:
   - containers
   - haskeline
+  - mtl
   - text
 
 executables:
