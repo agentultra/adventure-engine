@@ -7,6 +7,7 @@ import Data.Bifunctor
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -330,17 +331,16 @@ examine = Command (Verb "examine") handleExamine
   where
     handleExamine :: CommandHandler
     handleExamine _ [] = Left $ MissingParameter "examine what?"
-    handleExamine world args@(w:ws) = do
-      let playerInv = _playerInventory world
+    handleExamine world args = do
+      let playerInv  = _playerInventory world
+          objectName = maybe (keyArg args) keyArg $ peek "my" args
 
-      case (w, ws) of
-        ("my", ws'@(_:_)) -> do
-          let objectName = keyArg ws'
+      case peek "my" args of
+        Just _ -> do
           objectId <- maybeToRight (ObjectNotInInventory objectName) $
             M.lookup objectName playerInv
           examineInInventory world objectName objectId
-        _ -> do
-          let objectName = keyArg args
+        Nothing    -> do
           room <- currentRoom world
           objectId <- maybeToRight (ObjectNotInRoom objectName) $
             M.lookup objectName (_roomObjects room)
