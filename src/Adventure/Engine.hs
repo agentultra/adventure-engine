@@ -89,6 +89,22 @@ exitCurrentRoom exitName w = do
     $ M.lookup exitName (_roomExits room)
   maybeToRight SpaceWizard $ M.lookup exitId (_worldExits w)
 
+getObjectInCurrentRoom :: World -> Text -> Either GameError (EntityId GameObject)
+getObjectInCurrentRoom w objectName = do
+  room <- currentRoom w
+  maybeToRight (ObjectNotInRoom objectName) $
+    M.lookup objectName (_roomObjects room)
+
+getObjectInInventory :: World -> Text -> Either GameError (EntityId GameObject)
+getObjectInInventory w objectName =
+  maybeToRight (ObjectNotInInventory objectName)
+  $ M.lookup objectName $ _playerInventory w
+
+getObject :: World -> EntityId GameObject -> Either GameError GameObject
+getObject w objectId =
+  maybeToRight (ObjectDoesNotExist objectId)
+  $ M.lookup objectId $ _worldObjects w
+
 newtype GameState
   = GameState
   { _gameStateCommands :: [Command]
@@ -205,7 +221,7 @@ handle' game world input = do
 
 data GameError
   = RoomDoesNotExist (EntityId Room)
-  | ObjectDoesNotExist Text
+  | ObjectDoesNotExist (EntityId GameObject)
   | ObjectNotInRoom Text
   | ObjectNotInInventory Text
   | ObjectNotInContainer Text
@@ -256,7 +272,7 @@ pickUp = Command (Verb "pickup") handlePickup
         M.lookup objectName (_roomObjects room)
       _ <- maybeToRight SpaceWizard $
         M.lookup playerRoom rooms
-      _ <- maybeToRight (ObjectDoesNotExist objectName) $
+      _ <- maybeToRight (ObjectDoesNotExist objectId) $
         M.lookup objectId objects
       pure $ world
         { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
@@ -286,25 +302,17 @@ look = Command (Verb "look") handleLook
 
 lookInContainer :: World -> Text -> Either GameError World
 lookInContainer w containerName = do
-  room <- currentRoom w
-  containerId <- maybeToRight (ObjectNotInRoom containerName)
-    $ M.lookup containerName (_roomObjects room)
-  container' <- maybeToRight (ObjectDoesNotExist containerName)
-    $ M.lookup containerId (_worldObjects w)
+  containerId <- getObjectInCurrentRoom w containerName
+  container'  <- getObject w containerId
   case _gameObjectObject container' of
     ObjectItem _ -> Left $ InvalidObjectParameter containerName
     ObjectContainer cont -> do
-      items <- traverse getObject $ M.elems (_containerItems cont)
+      items <- traverse (getObject w) $ M.elems (_containerItems cont)
       let itemNames = T.intercalate ", " . map _gameObjectName $ items
       pure $ w
         { _logMessages = _logMessages w
           <> ["Inside the " <> containerName <> " you see: " <> itemNames]
         }
-      where
-        getObject objectId =
-          case M.lookup objectId (_worldObjects w) of
-            Nothing    -> Left $ ObjectDoesNotExist containerName
-            Just item' -> Right item'
 
 dropTo :: Command
 dropTo = Command (Verb "drop") handleDrop
@@ -332,42 +340,31 @@ examine = Command (Verb "examine") handleExamine
     handleExamine :: CommandHandler
     handleExamine _ [] = Left $ MissingParameter "examine what?"
     handleExamine world args = do
-      let playerInv  = _playerInventory world
-          objectName = maybe (keyArg args) keyArg $ peek "my" args
+      let objectName = maybe (keyArg args) keyArg $ peek "my" args
 
       case peek "my" args of
         Just _ -> do
-          objectId <- maybeToRight (ObjectNotInInventory objectName) $
-            M.lookup objectName playerInv
-          examineInInventory world objectName objectId
+          examineInInventory world objectName
         Nothing    -> do
-          room <- currentRoom world
-          objectId <- maybeToRight (ObjectNotInRoom objectName) $
-            M.lookup objectName (_roomObjects room)
-          examineInRoom world objectName objectId
+          examineInRoom world objectName
 
-examineInRoom :: World -> ItemName -> EntityId GameObject -> Either GameError World
-examineInRoom world objectName objectId = do
-  let objects     = _worldObjects world
-      msgs      = _logMessages world
+examineInInventory :: World -> ItemName -> Either GameError World
+examineInInventory world objectName = do
+  let msgs  = _logMessages world
 
-  room <- currentRoom world
-  _ <- maybeToRight (ObjectNotInRoom objectName) $
-    M.lookup objectName (_roomObjects room)
-  object <- maybeToRight (ObjectDoesNotExist objectName) $
-    M.lookup objectId objects
+  objectId <- getObjectInInventory world objectName
+  object <- getObject world objectId
 
   pure $ world { _logMessages = msgs <> [_gameObjectDescription object] }
 
-examineInInventory :: World -> ItemName -> EntityId GameObject -> Either GameError World
-examineInInventory world objectName objectId = do
-  let objects = _worldObjects world
-      msgs  = _logMessages world
+examineInRoom :: World -> ItemName -> Either GameError World
+examineInRoom world objectName = do
+  let msgs = _logMessages world
 
-  object <- maybeToRight (ObjectNotInInventory objectName) $
-    M.lookup objectId objects
+  objectId <- getObjectInCurrentRoom world objectName
+  object   <- getObject world objectId
 
-  pure $ world { _logMessages = msgs <> [_gameObjectDescription object] }
+  pure $ world {_logMessages = msgs <> [_gameObjectDescription object]}
 
 takeFrom :: Command
 takeFrom = Command (Verb "take") handleTake
@@ -381,11 +378,8 @@ takeFrom = Command (Verb "take") handleTake
             playerInv     = _playerInventory w
             objects       = _worldObjects w
 
-        room <- currentRoom w
-        objectId <- maybeToRight (ObjectNotInRoom containerName) $
-          M.lookup containerName (_roomObjects room)
-        object <- maybeToRight (ObjectDoesNotExist containerName) $
-          M.lookup objectId objects
+        objectId <- getObjectInCurrentRoom w containerName
+        object   <- getObject w objectId
         case _gameObjectObject object of
           ObjectItem _ -> Left SpaceWizard
           ObjectContainer container' -> do
@@ -409,8 +403,7 @@ render w@(World _ objects exits _ playerInv msgs) = do
     getItem objectId  =
       case M.lookup objectId objects of
        Nothing ->
-         Left $ ObjectDoesNotExist
-         ("Error missing rendering object: " <> (T.pack . show $ objectId))
+         Left $ ObjectDoesNotExist objectId
        Just item' -> Right item'
     getExit exitId =
       case M.lookup exitId exits of
