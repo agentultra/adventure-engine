@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Adventure.Engine where
@@ -80,37 +79,35 @@ data World
   }
   deriving (Eq, Show)
 
+fetch :: Ord k => GameError -> k -> Map k v -> Either GameError v
+fetch e key db = maybe (throwError e) pure $ M.lookup key db
+
 currentRoom :: World -> Either GameError Room
-currentRoom w = maybeToRight SpaceWizard
-  $ M.lookup (_playerRoom w) (_worldRooms w)
+currentRoom w = fetch SpaceWizard (_playerRoom w) (_worldRooms w)
 
 exitCurrentRoom :: World -> Text -> Either GameError Exit
 exitCurrentRoom w exitName = do
   room <- currentRoom w
-  exitId <- maybeToRight (ExitDoesNotExist' exitName)
-    $ M.lookup exitName (_roomExits room)
-  maybeToRight SpaceWizard $ M.lookup exitId (_worldExits w)
+  exitId <- fetch (ExitDoesNotExist' exitName) exitName (_roomExits room)
+  fetch SpaceWizard exitId (_worldExits w)
 
 getObjectInCurrentRoom :: World -> Text -> Either GameError (EntityId GameObject)
 getObjectInCurrentRoom w objectName = do
   room <- currentRoom w
-  maybeToRight (ObjectNotInRoom objectName) $
-    M.lookup objectName (_roomObjects room)
+  fetch (ObjectNotInRoom objectName) objectName $ _roomObjects room
 
 getObjectInInventory :: World -> Text -> Either GameError (EntityId GameObject)
 getObjectInInventory w objectName =
-  maybeToRight (ObjectNotInInventory objectName)
-  $ M.lookup objectName $ _playerInventory w
+  fetch (ObjectNotInInventory objectName) objectName $ _playerInventory w
 
 getObject :: World -> EntityId GameObject -> Either GameError GameObject
 getObject w objectId =
-  maybeToRight (ObjectDoesNotExist objectId)
-  $ M.lookup objectId $ _worldObjects w
+  fetch (ObjectDoesNotExist objectId) objectId $ _worldObjects w
 
 data GameState
   = GameState
   { _gameStateCommands :: [Command]
-  , _gameWorld :: World
+  , _gameWorld         :: World
   }
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
@@ -349,9 +346,9 @@ examine = Command (Verb "examine") handleExamine
       let objectName = maybe (keyArg args) keyArg $ peek "my" args
 
       case peek "my" args of
-        Just _ -> do
+        Just _ ->
           examineInInventory world objectName
-        Nothing    -> do
+        Nothing    ->
           examineInRoom world objectName
 
 examineInInventory :: World -> ItemName -> Either GameError World
@@ -399,7 +396,7 @@ takeFrom = Command (Verb "take") handleTake
               }
 
 render :: World -> Either GameError Text
-render w@(World _ objects exits _ playerInv msgs) = do
+render w@(World _ _ exits _ playerInv msgs) = do
   room       <- currentRoom w
   objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
