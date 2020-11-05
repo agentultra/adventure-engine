@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -119,6 +120,16 @@ newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT Gam
     , MonadError GameError
     )
 
+handleUpdate :: Monad m => Text -> GameEngine m ()
+handleUpdate input = do
+  (GameState cmds world) <- get
+  (v, args) <- parse input
+  cmd <- getCommand cmds v
+  case _commandWith cmd world args of
+    Left err -> throwError err
+    Right world' ->
+      put $ GameState cmds world'
+
 frontPorch :: Room
 frontPorch = Room
   "The Front Porch"
@@ -200,14 +211,15 @@ data Command
   , _commandWith :: World -> [Text] -> Either GameError World
   }
 
-getCommand :: [Command] -> Verb -> Either GameError Command
+getCommand :: MonadError GameError m => [Command] -> Verb -> m Command
 getCommand legalCommands v@(Verb v') =
-  maybeToRight (UnrecognizedCommand v) $ find (\(Command (Verb cv) _) -> T.isPrefixOf v' cv) legalCommands
+  maybe (throwError $ UnrecognizedCommand v) pure
+  $ find (\(Command (Verb cv) _) -> T.isPrefixOf v' cv) legalCommands
 
-parse :: Text -> Either GameError (Verb, [Text])
+parse :: MonadError GameError m => Text -> m (Verb, [Text])
 parse = parseCmd . T.words
   where
-    parseCmd [] = Left MissingCommand
+    parseCmd [] = throwError MissingCommand
     parseCmd (x:xs) = pure (Verb x, xs)
 
 defaultGameState :: GameState
