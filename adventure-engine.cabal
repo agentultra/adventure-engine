@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 159bbd3564d909a81e0a3ddcdecf388affb9f122484c1a7d3d8ecb7efbdb814f
+-- hash: f56f935f5c4b394938d7c0f947dbd3aa2922bd9cdc93da30ed2532972a45de50
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -29,10 +29,13 @@ source-repository head
 library
   exposed-modules:
       Adventure.Engine
+      Adventure.GUI
   other-modules:
       Paths_adventure_engine
   hs-source-dirs:
       src
+  default-extensions:
+      OverloadedStrings
   build-depends:
       base >=4.7 && <5
     , containers
@@ -48,6 +51,8 @@ executable adventure-engine-exe
       Paths_adventure_engine
   hs-source-dirs:
       app
+  default-extensions:
+      OverloadedStrings
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       adventure-engine
@@ -62,6 +67,8 @@ test-suite adventure-engine-test
       Paths_adventure_engine
   hs-source-dirs:
       test
+  default-extensions:
+      OverloadedStrings
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       adventure-engine
