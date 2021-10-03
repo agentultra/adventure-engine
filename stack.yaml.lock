@@ -3,10 +3,24 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: monomer-1.1.0.0@sha256:6a15a727ca394c60d92bb75e54af12b2818959b334e4b3bfab8b2f84472e9255,15414
+    pantry-tree:
+      size: 13579
+      sha256: 8a9bb7f15f1f6da6e28c9e83ec555bef99fdd0feaa2074902068f8d668e0a24c
+  original:
+    hackage: monomer-1.1.0.0@sha256:6a15a727ca394c60d92bb75e54af12b2818959b334e4b3bfab8b2f84472e9255,15414
+- completed:
+    hackage: nanovg-0.8.0.0@sha256:0183b4295ccc2dfb94a7eca977fb45759e1480652578936aa7b71bb4b9626480,4742
+    pantry-tree:
+      size: 2558
+      sha256: 0acd44b6f4f50d20bb162084895e052d9437e4de18f988c06e5acf9f85497e1c
+  original:
+    hackage: nanovg-0.8.0.0@sha256:0183b4295ccc2dfb94a7eca977fb45759e1480652578936aa7b71bb4b9626480,4742
 snapshots:
 - completed:
-    size: 532380
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/16/16.yaml
-    sha256: d6b004b095fe2a0b8b14fbc30014ee97e58843b9c9362ddb9244273dda62649e
-  original: lts-16.16
+    size: 587113
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/18/6.yaml
+    sha256: f74c482d7c93739ecf3abfbc0f2dea1c20a2dfb2462c689846ed55a9653b66f7
+  original: lts-18.6

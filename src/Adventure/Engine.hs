@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Adventure.Engine where
 
@@ -480,6 +481,6 @@ maybeToRight :: b -> Maybe a -> Either b a
 maybeToRight _ (Just x) = Right x
 maybeToRight y Nothing  = Left y
 
-eitherToInput :: (Exception e, MonadException m) => Either e a -> InputT m a
-eitherToInput (Left err)     = throwIO err
+eitherToInput :: MonadError e (InputT m) => Either e a -> InputT m a
+eitherToInput (Left err)     = throwError err
 eitherToInput (Right result) = pure result

@@ -28,6 +28,7 @@ library:
   dependencies:
   - containers
   - haskeline
+  - monomer
   - mtl
   - text
 
