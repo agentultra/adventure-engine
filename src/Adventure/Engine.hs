@@ -1,9 +1,14 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Adventure.Engine where
 
+import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
 import Data.Bifunctor
@@ -71,12 +76,12 @@ data Exit
 
 data World
   = World
-  { _worldRooms      :: Map (EntityId Room) Room
-  , _worldObjects    :: Map (EntityId GameObject) GameObject
-  , _worldExits      :: Map (EntityId Exit) Exit
-  , _playerRoom      :: EntityId Room
-  , _playerInventory :: Map Text (EntityId GameObject)
-  , _logMessages     :: [Text]
+  { _worldRooms       :: Map (EntityId Room) Room
+  , _worldObjects     :: Map (EntityId GameObject) GameObject
+  , _worldExits       :: Map (EntityId Exit) Exit
+  , _playerRoom       :: EntityId Room
+  , _playerInventory  :: Map Text (EntityId GameObject)
+  , _worldLogMessages :: [Text]
   }
   deriving (Eq, Show)
 
@@ -107,9 +112,11 @@ getObject w objectId =
 
 data GameState
   = GameState
-  { _gameStateVerbs :: [Verb]
-  , _gameWorld      :: World
+  { _gameStateVerbs       :: [Verb]
+  , _gameStateWorld       :: World
+  , _gameStateTestMessage :: Text
   }
+  deriving (Eq)
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
   deriving
@@ -216,6 +223,7 @@ defaultGameState
   , Verb "take"
   ]
   defaultWorld
+  "Hello from GameState!"
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
@@ -243,12 +251,13 @@ data GameError
 type CommandHandler = World -> [Text] -> Either GameError World
 
 handleVerb :: Verb -> World -> [Text] -> Either GameError World
-handleVerb (Verb "walk") = handleWalk
-handleVerb (Verb "pickup") = handlePickup
-handleVerb (Verb "drop") = handleDrop
-handleVerb (Verb "look") = handleLook
-handleVerb (Verb "examine") = handleExamine
-handleVerb (Verb "take") = handleTake
+handleVerb (Verb "walk") w args = handleWalk w args
+handleVerb (Verb "pickup") w args = handlePickup w args
+handleVerb (Verb "drop") w args = handleDrop w args
+handleVerb (Verb "look") w args = handleLook w args
+handleVerb (Verb "examine") w args = handleExamine w args
+handleVerb (Verb "take") w args = handleTake w args
+handleVerb v _ _ = Left $ UnrecognizedVerb v
 
 handleWalk :: CommandHandler
 handleWalk _ [] = Left $ MissingParameter "missing destination"
@@ -297,7 +306,7 @@ handleLook w args =
     Nothing -> do
       let exitName = keyArg args
       exit <- exitCurrentRoom w exitName
-      pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
+      pure $ w { _worldLogMessages = _worldLogMessages w <> [_exitDescription exit] }
 
 lookInContainer :: World -> Text -> Either GameError World
 lookInContainer w containerName = do
@@ -309,7 +318,7 @@ lookInContainer w containerName = do
       items <- traverse (getObject w) $ M.elems (_containerItems cont)
       let itemNames = T.intercalate ", " . map _gameObjectName $ items
       pure $ w
-        { _logMessages = _logMessages w
+        { _worldLogMessages = _worldLogMessages w
           <> ["Inside the " <> containerName <> " you see: " <> itemNames]
         }
 
@@ -345,21 +354,21 @@ handleExamine world args = do
 
 examineInInventory :: World -> ItemName -> Either GameError World
 examineInInventory world objectName = do
-  let msgs  = _logMessages world
+  let msgs  = _worldLogMessages world
 
   objectId <- getObjectInInventory world objectName
   object <- getObject world objectId
 
-  pure $ world { _logMessages = msgs <> [_gameObjectDescription object] }
+  pure $ world { _worldLogMessages = msgs <> [_gameObjectDescription object] }
 
 examineInRoom :: World -> ItemName -> Either GameError World
 examineInRoom world objectName = do
-  let msgs = _logMessages world
+  let msgs = _worldLogMessages world
 
   objectId <- getObjectInCurrentRoom world objectName
   object   <- getObject world objectId
 
-  pure $ world {_logMessages = msgs <> [_gameObjectDescription object]}
+  pure $ world {_worldLogMessages = msgs <> [_gameObjectDescription object]}
 
 handleTake :: CommandHandler
 handleTake w args = case splitAtWord "from" args of
@@ -472,3 +481,6 @@ maybeToRight y Nothing  = Left y
 eitherToInput :: MonadError e (InputT m) => Either e a -> InputT m a
 eitherToInput (Left err)     = throwError err
 eitherToInput (Right result) = pure result
+
+makeFields ''GameState
+makeFields ''World

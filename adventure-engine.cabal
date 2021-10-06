@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: f56f935f5c4b394938d7c0f947dbd3aa2922bd9cdc93da30ed2532972a45de50
+-- hash: 14149798edf32bca41a32b1b31ce9e9c94cdb4af7f3ce7689700ea1ece81f186
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -40,6 +40,7 @@ library
       base >=4.7 && <5
     , containers
     , haskeline
+    , lens
     , monomer
     , mtl
     , text
