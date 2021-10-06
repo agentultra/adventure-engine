@@ -107,8 +107,8 @@ getObject w objectId =
 
 data GameState
   = GameState
-  { _gameStateCommands :: [Command]
-  , _gameWorld         :: World
+  { _gameStateVerbs :: [Verb]
+  , _gameWorld      :: World
   }
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
@@ -195,15 +195,9 @@ renderRoom (Room name desc _ _) objects exits invItems msgs = T.unlines
 
 type ItemName = Text
 
-data Command
-  = Command
-  { _commandVerb :: Verb
-  , _commandWith :: World -> [Text] -> Either GameError World
-  }
-
-getCommand :: [Command] -> Verb -> Either GameError Command
-getCommand legalCommands v@(Verb v') =
-  maybeToRight (UnrecognizedCommand v) $ find (\(Command (Verb cv) _) -> T.isPrefixOf v' cv) legalCommands
+getVerb :: [Verb] -> Verb -> Either GameError Verb
+getVerb legalVerbs v@(Verb v') =
+  maybeToRight (UnrecognizedVerb v) $ find (== v) legalVerbs
 
 parse :: Text -> Either GameError (Verb, [Text])
 parse = parseCmd . T.words
@@ -214,21 +208,22 @@ parse = parseCmd . T.words
 defaultGameState :: GameState
 defaultGameState
   = GameState
-  [ walkTo
-  , pickUp
-  , dropTo
-  , look
-  , examine
-  , takeFrom
+  [ Verb "walk"
+  , Verb "pickup"
+  , Verb "drop"
+  , Verb "look"
+  , Verb "examine"
+  , Verb "take"
   ]
   defaultWorld
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
   (v, args) <- first (const MissingCommand) . parse $ input
-  cmd <- first (const $ UnrecognizedCommand v)
-    $ getCommand (_gameStateCommands game) v
-  _commandWith cmd world args
+  verb <- first (const $ UnrecognizedVerb v)
+    $ getVerb (_gameStateVerbs game) v
+  --_commandWith cmd world args
+  handleVerb verb world args
 
 data GameError
   = RoomDoesNotExist (EntityId Room)
@@ -240,69 +235,69 @@ data GameError
   | ExitDoesNotExist (EntityId Exit)
   | ExitDoesNotExist' Text
   | MissingCommand
-  | UnrecognizedCommand Verb
+  | UnrecognizedVerb Verb
   | MissingParameter Text
   | SpaceWizard
   deriving (Eq, Show)
 
 type CommandHandler = World -> [Text] -> Either GameError World
 
-walkTo :: Command
-walkTo = Command (Verb "walk") handleWalk
+handleVerb :: Verb -> World -> [Text] -> Either GameError World
+handleVerb (Verb "walk") = handleWalk
+handleVerb (Verb "pickup") = handlePickup
+handleVerb (Verb "drop") = handleDrop
+handleVerb (Verb "look") = handleLook
+handleVerb (Verb "examine") = handleExamine
+handleVerb (Verb "take") = handleTake
+
+handleWalk :: CommandHandler
+handleWalk _ [] = Left $ MissingParameter "missing destination"
+handleWalk world args = do
+  let rooms      = _worldRooms world
+      playerRoom = _playerRoom world
+      exitName   = keyArg args
+
+  exit <- exitCurrentRoom world exitName
+  _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
+    M.lookup (_exitFrom exit) rooms
+  _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
+    M.lookup (_exitTo exit) rooms
+  if _exitFrom exit /= playerRoom
+    then Left SpaceWizard
+    else pure $ world { _playerRoom = _exitTo exit }
+
+handlePickup :: CommandHandler
+handlePickup _ [] = Left $ MissingParameter "pickup what?"
+handlePickup world args = do
+  let objectName = keyArg args
+      playerRoom = _playerRoom world
+      playerInv  = _playerInventory world
+      rooms      = _worldRooms world
+      objects    = _worldObjects world
+
+  objectId <- getObjectInCurrentRoom world objectName
+  _ <- maybeToRight SpaceWizard $
+    M.lookup playerRoom rooms
+  _ <- maybeToRight (ObjectDoesNotExist objectId) $
+    M.lookup objectId objects
+  pure $ world
+    { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
+    , _playerInventory = M.insert objectName objectId playerInv
+    }
   where
-    handleWalk :: CommandHandler
-    handleWalk _ [] = Left $ MissingParameter "missing destination"
-    handleWalk world args = do
-      let rooms      = _worldRooms world
-          playerRoom = _playerRoom world
-          exitName   = keyArg args
-
-      exit <- exitCurrentRoom world exitName
-      _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
-        M.lookup (_exitFrom exit) rooms
-      _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
-        M.lookup (_exitTo exit) rooms
-      if _exitFrom exit /= playerRoom
-        then Left SpaceWizard
-        else pure $ world { _playerRoom = _exitTo exit }
-
-pickUp :: Command
-pickUp = Command (Verb "pickup") handlePickup
-  where
-    handlePickup :: CommandHandler
-    handlePickup _ [] = Left $ MissingParameter "pickup what?"
-    handlePickup world args = do
-      let objectName = keyArg args
-          playerRoom = _playerRoom world
-          playerInv  = _playerInventory world
-          rooms      = _worldRooms world
-          objects    = _worldObjects world
-
-      objectId <- getObjectInCurrentRoom world objectName
-      _ <- maybeToRight SpaceWizard $
-        M.lookup playerRoom rooms
-      _ <- maybeToRight (ObjectDoesNotExist objectId) $
-        M.lookup objectId objects
-      pure $ world
-        { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
-        , _playerInventory = M.insert objectName objectId playerInv
-        }
     removeItem objectName r = r
       { _roomObjects = M.update (const Nothing) objectName (_roomObjects r)
       }
 
-look :: Command
-look = Command (Verb "look") handleLook
-  where
-    handleLook :: CommandHandler
-    handleLook w [] = pure w
-    handleLook w args =
-      case peek "in" args of
-        Just args' -> lookInContainer w . keyArg $ args'
-        Nothing -> do
-          let exitName = keyArg args
-          exit <- exitCurrentRoom w exitName
-          pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
+handleLook :: CommandHandler
+handleLook w [] = pure w
+handleLook w args =
+  case peek "in" args of
+    Just args' -> lookInContainer w . keyArg $ args'
+    Nothing -> do
+      let exitName = keyArg args
+      exit <- exitCurrentRoom w exitName
+      pure $ w { _logMessages = _logMessages w <> [_exitDescription exit] }
 
 lookInContainer :: World -> Text -> Either GameError World
 lookInContainer w containerName = do
@@ -318,39 +313,35 @@ lookInContainer w containerName = do
           <> ["Inside the " <> containerName <> " you see: " <> itemNames]
         }
 
-dropTo :: Command
-dropTo = Command (Verb "drop") handleDrop
+handleDrop :: CommandHandler
+handleDrop _ [] = Left $ MissingParameter "drop what?"
+handleDrop world args = do
+  let playerPos = _playerRoom world
+      playerInv = _playerInventory world
+      rooms     = _worldRooms world
+      objectName = keyArg args
+
+  objectId <- maybeToRight (ObjectNotInInventory objectName) $
+    M.lookup objectName (_playerInventory world)
+
+  pure $ world
+    { _worldRooms = M.adjust (addObject objectName objectId) playerPos rooms
+    , _playerInventory = M.delete objectName playerInv
+    }
   where
-    handleDrop :: CommandHandler
-    handleDrop _ [] = Left $ MissingParameter "drop what?"
-    handleDrop world args = do
-      let playerPos = _playerRoom world
-          playerInv = _playerInventory world
-          rooms     = _worldRooms world
-          objectName = keyArg args
+    addObject objectName objectId r
+      = r { _roomObjects = M.insert objectName objectId (_roomObjects r) }
 
-      objectId <- maybeToRight (ObjectNotInInventory objectName) $
-        M.lookup objectName (_playerInventory world)
+handleExamine :: CommandHandler
+handleExamine _ [] = Left $ MissingParameter "examine what?"
+handleExamine world args = do
+  let objectName = maybe (keyArg args) keyArg $ peek "my" args
 
-      pure $ world
-        { _worldRooms = M.adjust (addObject objectName objectId) playerPos rooms
-        , _playerInventory = M.delete objectName playerInv
-        }
-    addObject objectName objectId r = r { _roomObjects = M.insert objectName objectId (_roomObjects r) }
-
-examine :: Command
-examine = Command (Verb "examine") handleExamine
-  where
-    handleExamine :: CommandHandler
-    handleExamine _ [] = Left $ MissingParameter "examine what?"
-    handleExamine world args = do
-      let objectName = maybe (keyArg args) keyArg $ peek "my" args
-
-      case peek "my" args of
-        Just _ ->
-          examineInInventory world objectName
-        Nothing    ->
-          examineInRoom world objectName
+  case peek "my" args of
+    Just _ ->
+      examineInInventory world objectName
+    Nothing    ->
+      examineInRoom world objectName
 
 examineInInventory :: World -> ItemName -> Either GameError World
 examineInInventory world objectName = do
@@ -370,31 +361,28 @@ examineInRoom world objectName = do
 
   pure $ world {_logMessages = msgs <> [_gameObjectDescription object]}
 
-takeFrom :: Command
-takeFrom = Command (Verb "take") handleTake
-  where
-    handleTake :: CommandHandler
-    handleTake w args = case splitAtWord "from" args of
-      Nothing       -> Left $ MissingParameter "take what from what?"
-      Just (xs, ys) -> do
-        let containerName = keyArg ys
-            itemName      = keyArg xs
-            playerInv     = _playerInventory w
-            objects       = _worldObjects w
+handleTake :: CommandHandler
+handleTake w args = case splitAtWord "from" args of
+  Nothing       -> Left $ MissingParameter "take what from what?"
+  Just (xs, ys) -> do
+    let containerName = keyArg ys
+        itemName      = keyArg xs
+        playerInv     = _playerInventory w
+        objects       = _worldObjects w
 
-        objectId <- getObjectInCurrentRoom w containerName
-        object   <- getObject w objectId
-        case _gameObjectObject object of
-          ObjectItem _ -> Left SpaceWizard
-          ObjectContainer container' -> do
-            itemId <- maybeToRight (ObjectNotInContainer itemName) $
-              M.lookup itemName (_containerItems container')
-            let object' = object { _gameObjectObject = ObjectContainer container' { _containerItems = M.delete itemName (_containerItems container') } }
+    objectId <- getObjectInCurrentRoom w containerName
+    object   <- getObject w objectId
+    case _gameObjectObject object of
+      ObjectItem _ -> Left SpaceWizard
+      ObjectContainer container' -> do
+        itemId <- maybeToRight (ObjectNotInContainer itemName) $
+          M.lookup itemName (_containerItems container')
+        let object' = object { _gameObjectObject = ObjectContainer container' { _containerItems = M.delete itemName (_containerItems container') } }
 
-            pure $ w
-              { _worldObjects = M.insert objectId object' objects
-              , _playerInventory = M.insert itemName itemId playerInv
-              }
+        pure $ w
+          { _worldObjects = M.insert objectId object' objects
+          , _playerInventory = M.insert itemName itemId playerInv
+          }
 
 render :: World -> Either GameError Text
 render w@(World _ _ exits _ playerInv msgs) = do
