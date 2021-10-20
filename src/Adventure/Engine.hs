@@ -110,11 +110,12 @@ getObject :: World -> EntityId GameObject -> Either GameError GameObject
 getObject w objectId =
   fetch (ObjectDoesNotExist objectId) objectId $ _worldObjects w
 
+-- TODO (james): a better way to show errors
 data GameState
   = GameState
-  { _gameStateVerbs       :: [Verb]
-  , _gameStateWorld       :: World
-  , _gameStateTestMessage :: Text
+  { _gameStateVerbs         :: [Verb]
+  , _gameStateWorld         :: World
+  , _gameStateRenderedViews :: [Text]
   }
   deriving (Eq)
 
@@ -223,7 +224,12 @@ defaultGameState
   , Verb "take"
   ]
   defaultWorld
-  "Hello from GameState!"
+  []
+
+initialGameState :: GameState
+initialGameState =
+  let firstView = either (T.pack . show) id . render $ defaultWorld
+  in defaultGameState { _gameStateRenderedViews = ["FOFOFOOF", firstView] }
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
