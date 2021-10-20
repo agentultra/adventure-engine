@@ -4,6 +4,7 @@ module Adventure.GUI where
 import Monomer
 
 import Control.Lens
+import Data.Either
 import qualified Data.Text as T
 import Adventure.Engine
 
@@ -16,9 +17,8 @@ buildUI
 buildUI env model = widgetTree
   where
     widgetTree = vstack
-      [ label "Hello, world!"
-      -- TODO (james): compose a lens to access the logMessage field of the World!
-      , textArea testMessage
+      -- TODO (james): a better way to show errors...
+      [ label_ (either (T.pack . show) id . render $ model ^. world) [multiline]
       ] `styleBasic` [padding 10]
 
 handleEvent env node model event =
