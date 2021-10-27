@@ -33,7 +33,7 @@ buildUI env model = widgetTree
     widgetTree = keystroke  [("Enter", AppInputReceived)] $ vstack
       [ scroll_ [] renderedViewLabels
       , textField_ inputBuffer [onChange AppInputUpdated]
-      , scroll_ [] renderedErrorLabels
+      , scroll_ [] renderedErrorLabels `styleBasic` [height 28, padding 5]
       ] `styleBasic` [padding 10]
 
 handleEvent :: WidgetEnv GameState AppEvent
