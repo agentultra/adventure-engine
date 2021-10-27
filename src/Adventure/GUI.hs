@@ -13,15 +13,9 @@ import Adventure.Engine
 
 data AppEvent
   = AppInit
-  | AppInputReceived
+  | AppInputReceived -- TODO (james): This should be InputEntered
+  | AppInputUpdated Text
   deriving (Eq, Show)
-
--- Widgets
-
-inputField_ :: WidgetEvent e => Text -> [TextFieldCfg s e] -> WidgetNode s e
-inputField_ value = textFieldD_ widgetData
-  where
-    widgetData = WidgetValue value
 
 -- UI
 
@@ -36,7 +30,7 @@ buildUI env model = widgetTree
     rowSepColor = gray & L.a .~ 0.5
     widgetTree = keystroke  [("Enter", AppInputReceived)] $ vstack
       [ scroll_ [] renderedViewLabels
-      , inputField_ "" []
+      , textField_ inputBuffer [onChange AppInputUpdated]
       ] `styleBasic` [padding 10]
 
 handleEvent :: WidgetEnv GameState AppEvent
@@ -49,6 +43,7 @@ handleEvent env node model event =
     AppInit -> []
     AppInputReceived -> [ Model $ model & renderedViews .~ "FOFOFOFOFOFOFOFO" : model ^. renderedViews
                         ]
+    AppInputUpdated txt -> [ Model $ model & inputBuffer .~ txt ]
 
 config
   = [ appWindowTitle "Adventure Engine"

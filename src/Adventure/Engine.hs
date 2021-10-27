@@ -116,6 +116,7 @@ data GameState
   { _gameStateVerbs         :: [Verb]
   , _gameStateWorld         :: World
   , _gameStateRenderedViews :: [Text]
+  , _gameStateInputBuffer   :: Text
   }
   deriving (Eq)
 
@@ -204,7 +205,7 @@ renderRoom (Room name desc _ _) objects exits invItems msgs = T.unlines
 type ItemName = Text
 
 getVerb :: [Verb] -> Verb -> Either GameError Verb
-getVerb legalVerbs v@(Verb v') =
+getVerb legalVerbs v =
   maybeToRight (UnrecognizedVerb v) $ find (== v) legalVerbs
 
 parse :: Text -> Either GameError (Verb, [Text])
@@ -225,6 +226,7 @@ defaultGameState
   ]
   defaultWorld
   []
+  ""
 
 initialGameState :: GameState
 initialGameState =
