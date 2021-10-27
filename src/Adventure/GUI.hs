@@ -41,8 +41,7 @@ handleEvent :: WidgetEnv GameState AppEvent
 handleEvent env node model event =
   case event of
     AppInit -> []
-    AppInputReceived -> [ Model $ model & renderedViews .~ "FOFOFOFOFOFOFOFO" : model ^. renderedViews
-                        ]
+    AppInputReceived -> [ Model $ updateGame model ]
     AppInputUpdated txt -> [ Model $ model & inputBuffer .~ txt ]
 
 config
@@ -51,6 +50,18 @@ config
     , appFontDef "Regular" "./assets/Alice-Regular.ttf"
     , appInitEvent AppInit
     ]
+
+updateGame :: GameState -> GameState
+updateGame g@(GameState vs w rvs input errors) =
+  case handle' g w input of
+    Left err -> g & gameErrors .~ err : errors
+    Right world' ->
+      case render world' of
+        Left renderErr -> g & gameErrors .~ renderErr : errors
+        Right rendered ->
+          g & renderedViews .~ rendered : rvs
+            & world .~ world'
+            & inputBuffer .~ ""
 
 start :: IO ()
 start = startApp initialGameState handleEvent buildUI config

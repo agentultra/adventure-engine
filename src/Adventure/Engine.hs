@@ -117,6 +117,7 @@ data GameState
   , _gameStateWorld         :: World
   , _gameStateRenderedViews :: [Text]
   , _gameStateInputBuffer   :: Text
+  , _gameStateGameErrors    :: [GameError]
   }
   deriving (Eq)
 
@@ -227,6 +228,7 @@ defaultGameState
   defaultWorld
   []
   ""
+  []
 
 initialGameState :: GameState
 initialGameState =
