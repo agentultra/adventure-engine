@@ -10,6 +10,7 @@ import Data.List
 import Data.Text (Text)
 import qualified Data.Text as T
 import Adventure.Engine
+import Adventure.List.Utils
 
 data AppEvent
   = AppInit
@@ -57,14 +58,19 @@ config
 updateGame :: GameState -> GameState
 updateGame g@(GameState vs w rvs input errors) =
   case handle' g w input of
-    Left err -> g & gameErrors .~ err : errors
+    Left err -> updateGameErrors g err
     Right world' ->
       case render world' of
-        Left renderErr -> g & gameErrors .~ renderErr : errors
+        Left renderErr -> updateGameErrors g renderErr
         Right rendered ->
           g & renderedViews .~ rendered : rvs
             & world .~ world'
             & inputBuffer .~ ""
+  where
+    updateGameErrors :: GameState -> GameError -> GameState
+    updateGameErrors (GameState _ _ _ _ errs) e
+      | length errs < 3 = g & gameErrors .~ e : errs
+      | otherwise = g & gameErrors .~ prepend e errs
 
 start :: IO ()
 start = startApp initialGameState handleEvent buildUI config
