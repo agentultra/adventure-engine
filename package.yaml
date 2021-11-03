@@ -28,7 +28,9 @@ library:
   dependencies:
   - containers
   - haskeline
+  - hoppy-runtime
   - mtl
+  - qtah-qt5
   - text
 
 executables:
@@ -39,6 +41,7 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -dynamic
     dependencies:
     - adventure-engine
     - text

@@ -17,7 +17,7 @@
 #
 # resolver: ./custom-snapshot.yaml
 # resolver: https://example.com/snapshots/2018-01-01.yaml
-resolver: lts-16.16
+resolver: lts-18.6
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -40,6 +40,13 @@ packages:
 #   commit: e7b331f14bcffb8367cd58fbfc8b40ec7642100a
 #
 # extra-deps: []
+extra-deps:
+- hoppy-runtime-0.8.0@sha256:c6707ae20f21a1392f42c38ad45b0c1188de08fcda98883c6815088d622b17f1,1146
+- hoppy-std-0.8.0@sha256:aff7bb6744d1b1366d0672db3722fc7b8f80f478293d100091867c6b19050ec8,1540
+- qtah-qt5-0.8.0@sha256:49dc0fcfa5996378fd7f04edf051880ce6b63205dd49ae4125d44101e922ddc9,25961
+- qtah-generator-0.8.0@sha256:389a5d5511b323d067709bbc6eabe8d70a34c3f6b352cd714ffcf370b7b3ba25,16278
+- hoppy-generator-0.8.0@sha256:0bde228c625e307f836adf2be71e34e8bf74fc7658b19f8a04901fc81a482e2a,2178
+- qtah-cpp-qt5-0.8.0@sha256:bde73d4ebf7f118127fa1b775fb087873e6d74623dd9a004e868f87e666806f9,1519
 
 # Override default flag values for local packages and extra-deps
 # flags: {}

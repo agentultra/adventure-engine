@@ -1,5 +1,6 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Adventure.Engine where
 
@@ -107,8 +108,27 @@ getObject w objectId =
 data GameState
   = GameState
   { _gameStateCommands :: [Command]
+  , _gameStateScenes   :: [Text]
   , _gameWorld         :: World
   }
+
+defaultGameState :: GameState
+defaultGameState
+  = GameState
+  [ walkTo
+  , pickUp
+  , dropTo
+  , look
+  , examine
+  , takeFrom
+  ]
+  []
+  defaultWorld
+
+initGameState :: GameState
+initGameState =
+  let scene = either show T.unpack . render . _gameWorld $ defaultGameState
+  in defaultGameState { _gameStateScenes = [T.pack scene] }
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
   deriving
@@ -209,18 +229,6 @@ parse = parseCmd . T.words
   where
     parseCmd [] = Left MissingCommand
     parseCmd (x:xs) = pure (Verb x, xs)
-
-defaultGameState :: GameState
-defaultGameState
-  = GameState
-  [ walkTo
-  , pickUp
-  , dropTo
-  , look
-  , examine
-  , takeFrom
-  ]
-  defaultWorld
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
@@ -480,6 +488,6 @@ maybeToRight :: b -> Maybe a -> Either b a
 maybeToRight _ (Just x) = Right x
 maybeToRight y Nothing  = Left y
 
-eitherToInput :: (Exception e, MonadException m) => Either e a -> InputT m a
-eitherToInput (Left err)     = throwIO err
+eitherToInput :: MonadError e (InputT m) => Either e a -> InputT m a
+eitherToInput (Left err)     = throwError err
 eitherToInput (Right result) = pure result

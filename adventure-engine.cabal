@@ -1,10 +1,10 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 579e912e4a3268d4fc7a6f16559b720fc2d3ae5fd7d746806cf0736391e2884b
+-- hash: 9a36110f58cdd33de9fe2679c082872a227048ba0ff6f99b718ccd9f704dc265
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -29,6 +29,7 @@ source-repository head
 library
   exposed-modules:
       Adventure.Engine
+      Adventure.GUI
   other-modules:
       Paths_adventure_engine
   hs-source-dirs:
@@ -37,7 +38,9 @@ library
       base >=4.7 && <5
     , containers
     , haskeline
+    , hoppy-runtime
     , mtl
+    , qtah-qt5
     , text
   default-language: Haskell2010
 
@@ -47,7 +50,7 @@ executable adventure-engine-exe
       Paths_adventure_engine
   hs-source-dirs:
       app
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N -dynamic
   build-depends:
       adventure-engine
     , base >=4.7 && <5
