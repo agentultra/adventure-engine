@@ -19,7 +19,8 @@ run = withScopedPtr (QApplication.new [""]) $ \_ -> do
   window <- QWidget.new
   layout <- QVBoxLayout.newWithParent window
   inputArea <- QLineEdit.newWithParent window
-  scene <- QTextEdit.newWithText $ T.unpack . T.unlines . _gameStateScenes $ gs
+  scene <- QTextEdit.new
+  QTextEdit.setPlainText scene $ T.unpack . T.unlines . _gameStateScenes $ gs
   QTextEdit.setReadOnly scene True
   QBoxLayout.addWidget layout scene
   QBoxLayout.addWidget layout inputArea
