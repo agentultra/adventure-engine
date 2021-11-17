@@ -109,7 +109,8 @@ data GameState
   = GameState
   { _gameStateCommands :: [Command]
   , _gameStateScenes   :: [Text]
-  , _gameWorld         :: World
+  , _gameStateWorld    :: World
+  , _gameStateInputBuf :: Text
   }
 
 defaultGameState :: GameState
@@ -124,10 +125,11 @@ defaultGameState
   ]
   []
   defaultWorld
+  ""
 
 initGameState :: GameState
 initGameState =
-  let scene = either show T.unpack . render . _gameWorld $ defaultGameState
+  let scene = either show T.unpack . render . _gameStateWorld $ defaultGameState
   in defaultGameState { _gameStateScenes = [T.pack scene] }
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
