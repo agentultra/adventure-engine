@@ -24,10 +24,13 @@ run = withScopedPtr (QApplication.new [T.unpack ""]) $ \_ -> do
   layout <- QVBoxLayout.newWithParent window
   inputArea <- QLineEdit.newWithParent window
   scene <- QTextEdit.new
+  errorsList <- QTextEdit.new
+  QTextEdit.setReadOnly errorsList True
   renderScene gsRef scene
   QTextEdit.setReadOnly scene True
   QBoxLayout.addWidget layout scene
   QBoxLayout.addWidget layout inputArea
+  QBoxLayout.addWidget layout errorsList
   QWidget.setWindowTitle window $ T.unpack "Adventure Engine"
   QWidget.resizeRaw window 500 350
 
@@ -37,13 +40,16 @@ run = withScopedPtr (QApplication.new [T.unpack ""]) $ \_ -> do
   connect_ inputArea QLineEdit.returnPressedSignal $ do
     gs' <- readIORef gsRef
     case handle' gs' (_gameStateWorld gs') (_gameStateInputBuf gs') of
-      Left err -> print err
+      Left err -> do
+        updateGameState gsRef $ AddGameError err
+        renderErrors gsRef errorsList
       Right world' ->
         case render world' of
-          Left renderErr ->
-            print renderErr
+          Left renderErr -> do
+            updateGameState gsRef $ AddGameError renderErr
+            renderErrors gsRef errorsList
           Right rendered -> do
-            updateGameState (GameStateUpdate world' rendered) gsRef
+            updateGameState gsRef (GameStateUpdate world' rendered)
             renderScene gsRef scene
             QLineEdit.clear inputArea
 
@@ -58,11 +64,20 @@ renderScene gsRef scene = do
     concatScenes :: [Text] -> Text
     concatScenes = T.unlines . intersperse "*************************\n"
 
-data GameStateUpdate = GameStateUpdate World Text
+renderErrors :: IORef GameState -> QTextEdit.QTextEdit -> IO ()
+renderErrors gsRef textArea = do
+  gs <- readIORef gsRef
+  QTextEdit.setPlainText textArea $ unlines . map show . _gameStateErrors $ gs
 
-updateGameState :: GameStateUpdate -> IORef GameState -> IO ()
-updateGameState (GameStateUpdate world renderedScene) gsRef =
+data GameStateUpdate
+  = GameStateUpdate World Text
+  | AddGameError GameError
+
+updateGameState :: IORef GameState -> GameStateUpdate -> IO ()
+updateGameState gsRef (GameStateUpdate world renderedScene) =
   modifyIORef' gsRef (\gs -> gs { _gameStateScenes = renderedScene : _gameStateScenes gs
                                 , _gameStateInputBuf = ""
                                 , _gameStateWorld = world
                                 })
+updateGameState gsRef (AddGameError err) =
+  modifyIORef' gsRef (\gs -> gs { _gameStateErrors = take 3 $ err : _gameStateErrors gs })

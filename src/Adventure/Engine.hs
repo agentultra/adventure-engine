@@ -111,6 +111,7 @@ data GameState
   , _gameStateScenes   :: [Text]
   , _gameStateWorld    :: World
   , _gameStateInputBuf :: Text
+  , _gameStateErrors   :: [GameError]
   }
 
 defaultGameState :: GameState
@@ -126,6 +127,7 @@ defaultGameState
   []
   defaultWorld
   ""
+  []
 
 initGameState :: GameState
 initGameState =
