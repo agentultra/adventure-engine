@@ -24,8 +24,7 @@ run = withScopedPtr (QApplication.new [T.unpack ""]) $ \_ -> do
   layout <- QVBoxLayout.newWithParent window
   inputArea <- QLineEdit.newWithParent window
   scene <- QTextEdit.new
-  gs <- readIORef gsRef
-  QTextEdit.setPlainText scene $ T.unpack . concatScenes . _gameStateScenes $ gs
+  renderScene gsRef scene
   QTextEdit.setReadOnly scene True
   QBoxLayout.addWidget layout scene
   QBoxLayout.addWidget layout inputArea
@@ -44,16 +43,26 @@ run = withScopedPtr (QApplication.new [T.unpack ""]) $ \_ -> do
           Left renderErr ->
             print renderErr
           Right rendered -> do
-            let gs'' = gs' { _gameStateScenes = rendered : _gameStateScenes gs'
-                           , _gameStateInputBuf = ""
-                           , _gameStateWorld = world'
-                           }
-            writeIORef gsRef gs''
-            QTextEdit.setPlainText scene $ T.unpack . concatScenes . _gameStateScenes $ gs''
+            updateGameState (GameStateUpdate world' rendered) gsRef
+            renderScene gsRef scene
             QLineEdit.clear inputArea
 
   QWidget.show window
   QCoreApplication.exec
+
+renderScene :: IORef GameState -> QTextEdit.QTextEdit -> IO ()
+renderScene gsRef scene = do
+  gs <- readIORef gsRef
+  QTextEdit.setPlainText scene $ T.unpack . concatScenes . _gameStateScenes $ gs
   where
     concatScenes :: [Text] -> Text
     concatScenes = T.unlines . intersperse "*************************\n"
+
+data GameStateUpdate = GameStateUpdate World Text
+
+updateGameState :: GameStateUpdate -> IORef GameState -> IO ()
+updateGameState (GameStateUpdate world renderedScene) gsRef =
+  modifyIORef' gsRef (\gs -> gs { _gameStateScenes = renderedScene : _gameStateScenes gs
+                                , _gameStateInputBuf = ""
+                                , _gameStateWorld = world
+                                })
