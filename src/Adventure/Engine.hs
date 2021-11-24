@@ -416,43 +416,6 @@ render w@(World _ _ exits _ playerInv msgs) = do
         Nothing   -> Left $ ExitDoesNotExist exitId
         Just exit -> Right exit
 
-repl :: GameState -> World -> IO ()
-repl g w = do
-  let initialRender = render w
-  case initialRender of
-    Left err -> do
-      print err
-      pure ()
-    Right rendered -> T.putStrLn rendered
-  runInputT defaultSettings $ loop w
-  where
-    loop :: World -> InputT IO ()
-    loop world = do
-      userInput <- getInputLine ">> "
-      case userInput of
-        Nothing -> pure ()
-        Just "quit" -> do
-          outputStrLn "Goodbye!"
-          pure ()
-        Just rawInput ->
-          case handle' g world . T.pack $ rawInput of
-            Left err -> do
-              outputStrLn $ show err
-              loop world
-            Right world' ->
-              case render world' of
-                Left renderErr -> do
-                  outputStrLn $ show renderErr
-                  loop world'
-                Right rendered -> do
-                  outputStrLn . T.unpack $ rendered
-                  loop world'
-
-displayWorld :: World -> InputT IO ()
-displayWorld world = case render world of
-  Left err       -> outputStrLn $ show err
-  Right rendered -> outputStrLn . T.unpack $ rendered
-
 newtype Verb = Verb { unVerb :: Text }
   deriving (Eq, Show)
 
