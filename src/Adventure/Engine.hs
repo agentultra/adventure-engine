@@ -8,6 +8,7 @@
 
 module Adventure.Engine where
 
+import Control.Exception
 import Control.Lens
 import Control.Monad.Except
 import Control.Monad.State
@@ -17,7 +18,6 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Text (Text)
 import qualified Data.Text as T
-import qualified Data.Text.IO as T
 import System.Console.Haskeline
 
 newtype EntityId a = EntityId Int
@@ -44,7 +44,7 @@ item size = ObjectItem . Item size
 
 data Container
   = Container
-  { _containerSize :: Int
+  { _containerSize  :: Int
   , _containerItems :: Map ItemName (EntityId GameObject)
   }
   deriving (Eq, Show)
@@ -71,6 +71,16 @@ data Exit
   , _exitDescription :: Text
   , _exitFrom        :: EntityId Room
   , _exitTo          :: EntityId Room
+  }
+  deriving (Eq, Show)
+
+data Scene
+  = Scene
+  { _sceneTitle       :: Text
+  , _sceneDescription :: Text
+  , _sceneObjects     :: [GameObject]
+  , _sceneInventory   :: [GameObject]
+  , _sceneExits       :: [Exit]
   }
   deriving (Eq, Show)
 
@@ -115,7 +125,7 @@ data GameState
   = GameState
   { _gameStateVerbs         :: [Verb]
   , _gameStateWorld         :: World
-  , _gameStateRenderedViews :: [Text]
+  , _gameStateRenderedViews :: [Scene]
   , _gameStateInputBuffer   :: Text
   , _gameStateGameErrors    :: [GameError]
   }
@@ -188,19 +198,6 @@ defaultWorld = World
   M.empty
   mempty
 
-renderRoom :: Room -> [GameObject] -> [Exit] -> [GameObject] -> [Text] -> Text
-renderRoom (Room name desc _ _) objects exits invItems msgs = T.unlines
-  [ name
-  , "-----------"
-  , desc
-  , "----------"
-  , T.unlines msgs
-  , "----------"
-  , "You see: " <> T.intercalate ", " (_gameObjectName <$> objects)
-  , "You are holding: " <> T.intercalate ", " (_gameObjectName <$> invItems)
-  , "Possible exits: " <> T.intercalate ", " (_exitName <$> exits)
-  ]
-
 -- Managing the World
 
 type ItemName = Text
@@ -230,10 +227,10 @@ defaultGameState
   ""
   []
 
-initialGameState :: GameState
-initialGameState =
-  let firstView = either (T.pack . show) id . render $ defaultWorld
-  in defaultGameState { _gameStateRenderedViews = [firstView] }
+initialGameState :: Either GameError GameState
+initialGameState = do
+  initialScene <- render defaultWorld
+  pure $ defaultGameState { _gameStateRenderedViews = [initialScene] }
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
@@ -257,6 +254,8 @@ data GameError
   | MissingParameter Text
   | SpaceWizard
   deriving (Eq, Show)
+
+instance Exception GameError
 
 type CommandHandler = World -> [Text] -> Either GameError World
 
@@ -403,13 +402,19 @@ handleTake w args = case splitAtWord "from" args of
           , _playerInventory = M.insert itemName itemId playerInv
           }
 
-render :: World -> Either GameError Text
-render w@(World _ _ exits _ playerInv msgs) = do
+render :: World -> Either GameError Scene
+render w@(World _ _ exits _ playerInv _) = do
   room       <- currentRoom w
   objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
   invObjects <- traverse (getObject w) $ M.elems playerInv
-  pure $ renderRoom room objects' exits' invObjects msgs
+  pure $ Scene
+    { _sceneTitle = _roomName room
+    , _sceneDescription = _roomDescription room
+    , _sceneObjects = objects'
+    , _sceneInventory = invObjects
+    , _sceneExits = exits'
+    }
   where
     getExit exitId =
       case M.lookup exitId exits of
