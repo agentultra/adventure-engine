@@ -30,7 +30,7 @@ buildUI env model = widgetTree
     renderedViewLabels = vstack $ intersperse spacer $ map renderedScene $ model ^. renderedViews
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
-    renderedErrorLabels = vstack $ intersperse spacer $ map renderedGameError $ model ^. gameErrors
+    renderedErrorLabels = vstack $ intersperse spacer $ map (label . gameErrorText) $ model ^. gameErrors
     widgetTree = keystroke  [("Enter", AppInputReceived)] $ vstack
       [ scroll_ [] renderedViewLabels
       , textField_ inputBuffer [onChange AppInputUpdated]

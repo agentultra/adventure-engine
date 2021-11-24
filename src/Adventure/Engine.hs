@@ -257,6 +257,21 @@ data GameError
 
 instance Exception GameError
 
+gameErrorText :: GameError -> Text
+gameErrorText = \case
+  RoomDoesNotExist _         -> "That room does not exist."
+  ObjectDoesNotExist _       -> "That object does not exist."
+  ObjectNotInRoom txt        -> "I don't see '" <> txt <> "' here."
+  ObjectNotInInventory txt   -> "You are not holding, '" <> txt <> "'."
+  ObjectNotInContainer txt   -> "I don't see '" <> txt <> "' in there."
+  InvalidObjectParameter txt -> "You can't really do that with, '" <> txt <> "'."
+  ExitDoesNotExist _         -> "I don't see that exit here."
+  ExitDoesNotExist' txt      -> "I don't see an exit called, '" <> txt <> "' here."
+  MissingCommand             -> "Did you mean to give me a command?"
+  UnrecognizedVerb v         -> "I don't know what you mean by, '" <> (unVerb v) <> "'."
+  MissingParameter txt       -> "I'm missing more information about, '" <> txt <> "'."
+  SpaceWizard                -> "SPACE WIZARD!!!!"
+
 type CommandHandler = World -> [Text] -> Either GameError World
 
 handleVerb :: Verb -> World -> [Text] -> Either GameError World

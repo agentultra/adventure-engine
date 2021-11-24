@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d8fb2fba12715b859c3b63c3c3f3fd2b7369b197a0039d76dbcf831fa11206bb
+-- hash: 34b8efa12c1a8c5063273f9563fce98dec43c615424a20f61d2d08fec778e749
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -36,6 +36,7 @@ library
   hs-source-dirs:
       src
   default-extensions:
+      LambdaCase
       OverloadedStrings
   build-depends:
       base >=4.7 && <5
@@ -54,6 +55,7 @@ executable adventure-engine-exe
   hs-source-dirs:
       app
   default-extensions:
+      LambdaCase
       OverloadedStrings
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
@@ -70,6 +72,7 @@ test-suite adventure-engine-test
   hs-source-dirs:
       test
   default-extensions:
+      LambdaCase
       OverloadedStrings
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
