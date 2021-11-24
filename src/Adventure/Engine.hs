@@ -233,7 +233,7 @@ defaultGameState
 initialGameState :: GameState
 initialGameState =
   let firstView = either (T.pack . show) id . render $ defaultWorld
-  in defaultGameState { _gameStateRenderedViews = ["FOFOFOOF", firstView] }
+  in defaultGameState { _gameStateRenderedViews = [firstView] }
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
