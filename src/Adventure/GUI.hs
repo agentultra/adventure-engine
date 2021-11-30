@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 module Adventure.GUI where
 
@@ -8,6 +9,7 @@ import Control.Exception
 import Control.Lens
 import Data.Either
 import Data.List
+import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import Adventure.Engine
@@ -17,6 +19,7 @@ data AppEvent
   = AppInit
   | AppInputReceived -- TODO (james): This should be InputEntered
   | AppInputUpdated Text
+  | AppShowLastMsg
   deriving (Eq, Show)
 
 -- UI
@@ -27,12 +30,14 @@ buildUI
   -> WidgetNode GameState AppEvent
 buildUI env model = widgetTree
   where
-    renderedViewLabels = vstack $ intersperse spacer $ map renderedScene $ model ^. renderedViews
+    bottomMarker = spacer `nodeKey` "bottomMarker"
+    renderedViewLabels = intersperse spacer $ map renderedScene $ model ^. renderedViews
+    renderedViewStack = vstack . reverse $ bottomMarker : renderedViewLabels
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map (label . gameErrorText) $ model ^. gameErrors
     widgetTree = keystroke  [("Enter", AppInputReceived)] $ vstack
-      [ scroll_ [] renderedViewLabels
+      [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
       , textField_ inputBuffer [onChange AppInputUpdated]
       , scroll_ [] renderedErrorLabels `styleBasic` [height 28, padding 5]
       ] `styleBasic` [padding 10]
@@ -63,8 +68,21 @@ handleEvent :: WidgetEnv GameState AppEvent
 handleEvent env node model event =
   case event of
     AppInit -> []
-    AppInputReceived -> [ Model $ updateGame model ]
+    AppInputReceived -> [
+        Model $ updateGame model,
+        Event AppShowLastMsg
+      ]
     AppInputUpdated txt -> [ Model $ model & inputBuffer .~ txt ]
+    AppShowLastMsg -> scrollToNode env node "bottomMarker"
+
+scrollToNode :: WidgetEnv GameState AppEvent
+  -> WidgetNode GameState AppEvent
+  -> WidgetKey
+  -> [EventResponse GameState AppEvent GameState ()]
+scrollToNode wenv node key = maybeToList $ makeMsg <$> childInfo where
+  makeMsg info = Message "scrollLabels" (ScrollTo $ info ^. L.viewport)
+  path = pathFromKey wenv key
+  childInfo = path >>= findWidgetByPath wenv node
 
 config
   = [ appWindowTitle "Adventure Engine"
