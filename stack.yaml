@@ -41,7 +41,7 @@ packages:
 #
 # extra-deps: []
 extra-deps:
-- monomer-1.1.0.0@sha256:6a15a727ca394c60d92bb75e54af12b2818959b334e4b3bfab8b2f84472e9255,15414
+- monomer-1.2.0.0
 - nanovg-0.8.0.0@sha256:0183b4295ccc2dfb94a7eca977fb45759e1480652578936aa7b71bb4b9626480,4742
 
 # Override default flag values for local packages and extra-deps
