@@ -27,7 +27,7 @@ buildUI
   -> WidgetNode GameState AppEvent
 buildUI env model = widgetTree
   where
-    renderedViewLabels = vstack $ intersperse spacer $ map renderedScene $ model ^. renderedViews
+    renderedViewLabels = vstack $ intersperse spacer $ map renderedScene $ model ^. scenes
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map (label . gameErrorText) $ model ^. gameErrors
@@ -85,7 +85,7 @@ updateGame g@(GameState vs w rvs input errors) =
       case render world' of
         Left renderErr -> updateGameErrors g renderErr
         Right rendered ->
-          g & renderedViews .~ rendered : rvs
+          g & scenes .~ rendered : rvs
             & world .~ world'
             & inputBuffer .~ ""
   where

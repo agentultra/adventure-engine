@@ -123,11 +123,11 @@ getObject w objectId =
 -- TODO (james): a better way to show errors
 data GameState
   = GameState
-  { _gameStateVerbs         :: [Verb]
-  , _gameStateWorld         :: World
-  , _gameStateRenderedViews :: [Scene]
-  , _gameStateInputBuffer   :: Text
-  , _gameStateGameErrors    :: [GameError]
+  { _gameStateVerbs       :: [Verb]
+  , _gameStateWorld       :: World
+  , _gameStateScenes      :: [Scene]
+  , _gameStateInputBuffer :: Text
+  , _gameStateGameErrors  :: [GameError]
   }
   deriving (Eq)
 
@@ -230,7 +230,7 @@ defaultGameState
 initialGameState :: Either GameError GameState
 initialGameState = do
   initialScene <- render defaultWorld
-  pure $ defaultGameState { _gameStateRenderedViews = [initialScene] }
+  pure $ defaultGameState { _gameStateScenes = [initialScene] }
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
