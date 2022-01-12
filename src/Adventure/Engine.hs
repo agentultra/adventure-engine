@@ -79,7 +79,6 @@ data Scene
   { _sceneTitle       :: Text
   , _sceneDescription :: Text
   , _sceneObjects     :: [GameObject]
-  , _sceneInventory   :: [GameObject]
   , _sceneExits       :: [Exit]
   }
   deriving (Eq, Show)
@@ -115,6 +114,9 @@ getObjectInCurrentRoom w objectName = do
 getObjectInInventory :: World -> Text -> Either GameError (EntityId GameObject)
 getObjectInInventory w objectName =
   fetch (ObjectNotInInventory objectName) objectName $ _playerInventory w
+
+getInventoryObjects :: World -> Either GameError [GameObject]
+getInventoryObjects w = traverse (getObject w) $ M.elems (_playerInventory w)
 
 getObject :: World -> EntityId GameObject -> Either GameError GameObject
 getObject w objectId =
@@ -422,12 +424,10 @@ render w@(World _ _ exits _ playerInv _) = do
   room       <- currentRoom w
   objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
-  invObjects <- traverse (getObject w) $ M.elems playerInv
   pure $ Scene
     { _sceneTitle = _roomName room
     , _sceneDescription = _roomDescription room
     , _sceneObjects = objects'
-    , _sceneInventory = invObjects
     , _sceneExits = exits'
     }
   where

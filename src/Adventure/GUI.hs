@@ -1,4 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LambdaCase #-}
+
 module Adventure.GUI where
 
 import Monomer
@@ -27,7 +28,7 @@ buildUI
   -> WidgetNode GameState AppEvent
 buildUI env model = widgetTree
   where
-    renderedViewLabels = vstack $ intersperse spacer $ map renderedScene $ model ^. scenes
+    renderedViewLabels = hstack [vstack $ intersperse spacer $ map renderedScene $ model ^. scenes, renderInventory $ tryRenderGameObject (getInventoryObjects $ model ^. world)]
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map (label . gameErrorText) $ model ^. gameErrors
@@ -36,9 +37,12 @@ buildUI env model = widgetTree
       , textField_ inputBuffer [onChange AppInputUpdated]
       , scroll_ [] renderedErrorLabels `styleBasic` [height 28, padding 5]
       ] `styleBasic` [padding 10]
+    -- TODO (james): fix error handling, this is stinky
+    tryRenderGameObject (Left err)   = error $ show err
+    tryRenderGameObject (Right objs) = objs
 
 renderedScene :: Scene -> WidgetNode GameState AppEvent
-renderedScene (Scene roomName roomDescription objects inventory exits) =
+renderedScene (Scene roomName roomDescription objects exits) =
   vstack
   [ label_ roomName [] `styleBasic` [textFont "Noticia-Bold", textCenter]
   , separatorLine `styleBasic` [padding 10]
@@ -47,13 +51,16 @@ renderedScene (Scene roomName roomDescription objects inventory exits) =
   , hstack [ label_ "You see: " []
            , label_ (T.intercalate ", " $ map _gameObjectName objects) []
            ] `styleBasic` [paddingL 10, paddingR 10]
-  , hstack [ label_ "You are holding: " []
-           , label_ (T.intercalate ", " $ map _gameObjectName inventory) []
-           ] `styleBasic` [paddingL 10, paddingR 10]
   , hstack [ label_ "Possible exits: " []
            , label_ (T.intercalate ", " $ map _exitName exits) []
            ] `styleBasic` [paddingL 10, paddingR 10]
   ]
+
+renderInventory :: [GameObject] -> WidgetNode GameState AppEvent
+renderInventory objs =
+  vstack $ [ label_ "You are holding: " [] ] ++ map renderInventoryObject objs
+  where
+    renderInventoryObject obj = label_ (_gameObjectName obj) []
 
 handleEvent :: WidgetEnv GameState AppEvent
   -> WidgetNode GameState AppEvent
