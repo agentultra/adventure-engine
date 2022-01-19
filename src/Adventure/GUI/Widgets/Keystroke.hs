@@ -59,8 +59,11 @@ import qualified Data.Set as Set
 import qualified Data.Text as T
 
 import Monomer.Widgets.Container
+import Monomer.Widgets.Containers.Scroll
 
 import qualified Monomer.Lens as L
+
+import Debug.Trace
 
 {-|
 Configuration options for keystroke:
@@ -143,10 +146,11 @@ makeKeystroke bindings config = widget where
       ignoreChildren = Just True == _kscIgnoreChildren config
       newWenv = wenv & L.inputStatus %~ removeMods
       evts = snd <$> filter (keyStrokeActive newWenv code . fst) bindings
+      scrollToReqs = maybeToList ((\wid -> SendMessage wid (ScrollTo (Rect 20 20 (200000) (20000)))) <$> findWidgetIdFromPath wenv (Seq.fromList [0, 0, 0, 0]))
       reqs
         | ignoreChildren && not (null evts) = [IgnoreChildrenEvents]
         | otherwise = []
-      result = resultReqsEvts node reqs evts
+      result = resultReqsEvts node (if null evts then reqs else reqs ++ scrollToReqs) evts
     _ -> Nothing
 
 keyStrokeActive :: WidgetEnv s e -> KeyCode -> KeyStroke -> Bool
