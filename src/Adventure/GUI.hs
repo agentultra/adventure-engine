@@ -2,7 +2,7 @@
 
 module Adventure.GUI where
 
-import Monomer
+import Monomer hiding (keystroke)
 import qualified Monomer.Lens as L
 
 import Control.Exception
@@ -12,6 +12,7 @@ import Data.List
 import Data.Text (Text)
 import qualified Data.Text as T
 import Adventure.Engine
+import Adventure.GUI.Widgets.Keystroke
 import Adventure.List.Utils
 
 data AppEvent
