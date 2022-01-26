@@ -125,7 +125,7 @@ getObject w objectId =
 -- TODO (james): a better way to show errors
 data GameState
   = GameState
-  { _gameStateVerbs       :: [Verb]
+  { _gameStateVerbs       :: VerbAliasMap
   , _gameStateWorld       :: World
   , _gameStateScenes      :: [Scene]
   , _gameStateInputBuffer :: Text
@@ -204,9 +204,28 @@ defaultWorld = World
 
 type ItemName = Text
 
-getVerb :: [Verb] -> Verb -> Either GameError Verb
-getVerb legalVerbs v =
-  maybeToRight (UnrecognizedVerb v) $ find (== v) legalVerbs
+type VerbAliasMap = Map Verb Verb
+
+defaultVerbAliasMap :: VerbAliasMap
+defaultVerbAliasMap
+  = M.fromList
+  [ (Verb "l", Verb "look")
+  , (Verb "look", Verb "look")
+  , (Verb "w", Verb "walk")
+  , (Verb "walk", Verb "walk")
+  , (Verb "p", Verb "pickup")
+  , (Verb "pickup", Verb "pickup")
+  , (Verb "d", Verb "drop")
+  , (Verb "drop", Verb "drop")
+  , (Verb "e", Verb "examine")
+  , (Verb "examine", Verb "examine")
+  , (Verb "t", Verb "take")
+  , (Verb "take", Verb "take")
+  ]
+
+getVerb :: VerbAliasMap -> Verb -> Either GameError Verb
+getVerb verbAliasMap v =
+  maybeToRight (UnrecognizedVerb v) $ M.lookup v verbAliasMap
 
 parse :: Text -> Either GameError (Verb, [Text])
 parse = parseCmd . T.words
@@ -217,13 +236,7 @@ parse = parseCmd . T.words
 defaultGameState :: GameState
 defaultGameState
   = GameState
-  [ Verb "walk"
-  , Verb "pickup"
-  , Verb "drop"
-  , Verb "look"
-  , Verb "examine"
-  , Verb "take"
-  ]
+  defaultVerbAliasMap
   defaultWorld
   []
   ""
@@ -437,7 +450,7 @@ render w@(World _ _ exits _ playerInv _) = do
         Just exit -> Right exit
 
 newtype Verb = Verb { unVerb :: Text }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 -- Utilities
 
