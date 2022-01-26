@@ -20,6 +20,8 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.Haskeline
 
+import Adventure.List.Utils
+
 newtype EntityId a = EntityId Int
   deriving (Eq, Ord, Show)
 
@@ -490,3 +492,20 @@ eitherToInput (Right result) = pure result
 
 makeFields ''GameState
 makeFields ''World
+
+updateGame :: GameState -> GameState
+updateGame g@(GameState vs w rvs input errors) =
+  case handle' g w input of
+    Left err -> updateGameErrors g err
+    Right world' ->
+      case render world' of
+        Left renderErr -> updateGameErrors g renderErr
+        Right rendered ->
+          g & scenes .~ rendered : rvs
+            & world .~ world'
+            & inputBuffer .~ ""
+  where
+    updateGameErrors :: GameState -> GameError -> GameState
+    updateGameErrors (GameState _ _ _ _ errs) e
+      | length errs < 3 = g & gameErrors .~ e : errs
+      | otherwise = g & gameErrors .~ prepend e errs
