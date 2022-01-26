@@ -81,10 +81,13 @@ handleEvent :: WidgetEnv GameState AppEvent
 handleEvent env node model event =
   case event of
     AppInit -> []
-    AppInputReceived -> [
-        Model $ updateGame model,
-        Event AppShowLastMsg
-      ]
+    AppInputReceived ->
+      let inputTxt = model ^. inputBuffer
+      in if inputTxt == "$quit"
+         then [ exitApplication ]
+         else [ Model $ updateGame model,
+               Event AppShowLastMsg
+              ]
     AppInputUpdated txt -> [ Model $ model & inputBuffer .~ txt ]
     AppShowLastMsg -> scrollToNode env node "bottomMarker"
 
