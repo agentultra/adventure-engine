@@ -509,3 +509,15 @@ updateGame g@(GameState vs w rvs input errors) =
     updateGameErrors (GameState _ _ _ _ errs) e
       | length errs < 3 = g & gameErrors .~ e : errs
       | otherwise = g & gameErrors .~ prepend e errs
+
+data UserCommandResult
+  = Quit
+  | Update
+  deriving (Eq, Show)
+
+handleUserCommand :: GameState -> UserCommandResult
+handleUserCommand state =
+  let inputTxt = state ^. inputBuffer
+  in if inputTxt == "$quit"
+  then Quit
+  else Update

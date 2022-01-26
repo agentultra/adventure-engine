@@ -82,12 +82,11 @@ handleEvent env node model event =
   case event of
     AppInit -> []
     AppInputReceived ->
-      let inputTxt = model ^. inputBuffer
-      in if inputTxt == "$quit"
-         then [ exitApplication ]
-         else [ Model $ updateGame model,
-               Event AppShowLastMsg
-              ]
+      case handleUserCommand model of
+        Quit -> [ exitApplication ]
+        Update -> [ Model $ updateGame model,
+                    Event AppShowLastMsg
+                  ]
     AppInputUpdated txt -> [ Model $ model & inputBuffer .~ txt ]
     AppShowLastMsg -> scrollToNode env node "bottomMarker"
 
