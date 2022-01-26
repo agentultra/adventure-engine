@@ -35,12 +35,16 @@ buildUI env model = widgetTree
     bottomMarker = spacer `nodeKey` "bottomMarker"
     renderedSceneLabels = intersperse spacer $ map renderedScene $ model ^. scenes
     renderedViewStack = vstack . reverse $ bottomMarker : renderedSceneLabels
-    gameViewArea = hstack [renderedViewStack, renderInventory $ tryRenderGameObject (getInventoryObjects $ model ^. world)]
+    gameViewArea
+      = hstack
+      [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
+      , renderInventory $ tryRenderGameObject (getInventoryObjects $ model ^. world)
+      ]
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map (label . gameErrorText) $ model ^. gameErrors
     widgetTree = keystroke  [("Enter", AppInputReceived)] $ vstack
-      [ scroll_ [] gameViewArea `nodeKey` "scrollLabels"
+      [ gameViewArea
       , textField_ inputBuffer [onChange AppInputUpdated]
       , scroll_ [] renderedErrorLabels `styleBasic` [height 28, padding 5]
       ] `styleBasic` [padding 10]
