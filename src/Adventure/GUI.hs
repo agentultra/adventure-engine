@@ -33,7 +33,7 @@ buildUI
 buildUI env model = widgetTree
   where
     bottomMarker = spacer `nodeKey` "bottomMarker"
-    renderedSceneLabels = intersperse spacer $ map renderedScene $ model ^. renderedViews
+    renderedSceneLabels = intersperse spacer $ map renderedScene $ model ^. scenes
     renderedViewStack = vstack . reverse $ bottomMarker : renderedSceneLabels
     gameViewArea = hstack [renderedViewStack, renderInventory $ tryRenderGameObject (getInventoryObjects $ model ^. world)]
     rowSepColor = gray & L.a .~ 0.5
