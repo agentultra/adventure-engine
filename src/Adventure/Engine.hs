@@ -79,7 +79,6 @@ data Scene
   { _sceneTitle       :: Text
   , _sceneDescription :: Text
   , _sceneObjects     :: [GameObject]
-  , _sceneInventory   :: [GameObject]
   , _sceneExits       :: [Exit]
   }
   deriving (Eq, Show)
@@ -116,6 +115,9 @@ getObjectInInventory :: World -> Text -> Either GameError (EntityId GameObject)
 getObjectInInventory w objectName =
   fetch (ObjectNotInInventory objectName) objectName $ _playerInventory w
 
+getInventoryObjects :: World -> Either GameError [GameObject]
+getInventoryObjects w = traverse (getObject w) $ M.elems (_playerInventory w)
+
 getObject :: World -> EntityId GameObject -> Either GameError GameObject
 getObject w objectId =
   fetch (ObjectDoesNotExist objectId) objectId $ _worldObjects w
@@ -123,11 +125,11 @@ getObject w objectId =
 -- TODO (james): a better way to show errors
 data GameState
   = GameState
-  { _gameStateVerbs         :: [Verb]
-  , _gameStateWorld         :: World
-  , _gameStateRenderedViews :: [Scene]
-  , _gameStateInputBuffer   :: Text
-  , _gameStateGameErrors    :: [GameError]
+  { _gameStateVerbs       :: [Verb]
+  , _gameStateWorld       :: World
+  , _gameStateScenes      :: [Scene]
+  , _gameStateInputBuffer :: Text
+  , _gameStateGameErrors  :: [GameError]
   }
   deriving (Eq)
 
@@ -230,7 +232,7 @@ defaultGameState
 initialGameState :: Either GameError GameState
 initialGameState = do
   initialScene <- render defaultWorld
-  pure $ defaultGameState { _gameStateRenderedViews = [initialScene] }
+  pure $ defaultGameState { _gameStateScenes = [initialScene] }
 
 handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
@@ -422,12 +424,10 @@ render w@(World _ _ exits _ playerInv _) = do
   room       <- currentRoom w
   objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
-  invObjects <- traverse (getObject w) $ M.elems playerInv
   pure $ Scene
     { _sceneTitle = _roomName room
     , _sceneDescription = _roomDescription room
     , _sceneObjects = objects'
-    , _sceneInventory = invObjects
     , _sceneExits = exits'
     }
   where
