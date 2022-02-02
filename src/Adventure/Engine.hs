@@ -38,11 +38,12 @@ data Item
   = Item
   { _itemSize'   :: Int
   , _itemWeight' :: Int
+  , _itemVerbs   :: [(Verb, Verb)]
   }
   deriving (Eq, Show)
 
-item :: Int -> Int -> Object
-item size = ObjectItem . Item size
+item :: Int -> Int -> [(Verb, Verb)] -> Object
+item size weight = ObjectItem . Item size weight
 
 data Container
   = Container
@@ -102,6 +103,7 @@ data World
   , _worldExits       :: Map (EntityId Exit) Exit
   , _playerRoom       :: EntityId Room
   , _playerInventory  :: Map Text (EntityId GameObject)
+  , _playerVerbs      :: VerbAliasMap
   , _worldLogMessages :: [Text]
   }
   deriving (Eq, Show)
@@ -137,8 +139,7 @@ getObject w objectId =
 -- TODO (james): a better way to show errors
 data GameState
   = GameState
-  { _gameStateVerbs       :: VerbAliasMap
-  , _gameStateWorld       :: World
+  { _gameStateWorld       :: World
   , _gameStateScenes      :: [Scene]
   , _gameStateInputBuffer :: Text
   , _gameStateGameErrors  :: [GameError]
@@ -169,15 +170,16 @@ mainHall = Room
   (M.fromList [("door", EntityId 5)])
 
 shovel :: GameObject
-shovel = GameObject "Shovel" "A rusted shovel with a wooden handle." $ item 2 4
+shovel = GameObject "Shovel" "A rusted shovel with a wooden handle."
+  $ item 2 4 [(Verb "dig", Verb "dig")]
 
 purse :: GameObject
-purse = GameObject "Purse" "Weathered, old, leather purse." $ item 1 1
+purse = GameObject "Purse" "Weathered, old, leather purse." $ item 1 1 []
 
 magicBrolly :: GameObject
 magicBrolly
   = GameObject "Brolly" "A plain, black brolly. The head of a dragon is carved into the wooden handle."
-  $ item 1 1
+  $ item 1 1 []
 
 bucket :: GameObject
 bucket
@@ -212,6 +214,7 @@ defaultWorld = World
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
   (EntityId 0)
   M.empty
+  defaultVerbAliasMap
   mempty
 
 -- Managing the World
@@ -250,7 +253,6 @@ parse = parseCmd . T.words
 defaultGameState :: GameState
 defaultGameState
   = GameState
-  defaultVerbAliasMap
   defaultWorld
   []
   ""
@@ -265,8 +267,7 @@ handle' :: GameState -> World -> Text -> Either GameError World
 handle' game world input = do
   (v, args) <- first (const MissingCommand) . parse $ input
   verb <- first (const $ UnrecognizedVerb v)
-    $ getVerb (_gameStateVerbs game) v
-  --_commandWith cmd world args
+    $ getVerb (_playerVerbs world) v
   handleVerb verb world args
 
 data GameError
@@ -460,7 +461,7 @@ handleTake w args = case splitAtWord "from" args of
           }
 
 render :: World -> Either GameError Scene
-render w@(World _ _ exits _ playerInv messages) = do
+render w@(World _ _ exits _ playerInv _ messages) = do
   room       <- currentRoom w
   objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
@@ -520,7 +521,7 @@ makeFields ''GameState
 makeFields ''World
 
 updateGame :: GameState -> GameState
-updateGame g@(GameState vs w rvs input errors) =
+updateGame g@(GameState w rvs input errors) =
   case handle' g w input of
     Left err -> updateGameErrors g err
     Right world' ->
@@ -532,7 +533,7 @@ updateGame g@(GameState vs w rvs input errors) =
             & inputBuffer .~ ""
   where
     updateGameErrors :: GameState -> GameError -> GameState
-    updateGameErrors (GameState _ _ _ _ errs) e
+    updateGameErrors (GameState _ _ _ errs) e
       | length errs < 3 = g & gameErrors .~ e : errs
       | otherwise = g & gameErrors .~ prepend e errs
 
