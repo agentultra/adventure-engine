@@ -53,19 +53,21 @@ buildUI env model = widgetTree
     tryRenderGameObject (Right objs) = objs
 
 renderedScene :: Scene -> WidgetNode GameState AppEvent
-renderedScene (Scene roomName roomDescription objects exits) =
-  vstack
-  [ label_ roomName [] `styleBasic` [textFont "Noticia-Bold", textCenter]
-  , separatorLine `styleBasic` [padding 10]
-  , label_ roomDescription [] `styleBasic` [paddingL 20, paddingR 20, paddingB 10]
-  , separatorLine `styleBasic` [padding 10]
-  , hstack [ label_ "You see: " []
-           , label_ (T.intercalate ", " $ map _gameObjectName objects) []
-           ] `styleBasic` [paddingL 10, paddingR 10]
-  , hstack [ label_ "Possible exits: " []
-           , label_ (T.intercalate ", " $ map _exitName exits) []
-           ] `styleBasic` [paddingL 10, paddingR 10]
-  ]
+renderedScene (Scene roomName roomDescription objects exits msgs) =
+  let renderedMsgs = vstack $ map label msgs
+  in vstack
+     [ label_ roomName [] `styleBasic` [textFont "Noticia-Bold", textCenter]
+     , separatorLine `styleBasic` [padding 10]
+     , label_ roomDescription [] `styleBasic` [paddingL 20, paddingR 20, paddingB 10]
+     , renderedMsgs
+     , separatorLine `styleBasic` [padding 10]
+     , hstack [ label_ "You see: " []
+              , label_ (T.intercalate ", " $ map _gameObjectName objects) []
+              ] `styleBasic` [paddingL 10, paddingR 10]
+     , hstack [ label_ "Possible exits: " []
+              , label_ (T.intercalate ", " $ map _exitName exits) []
+              ] `styleBasic` [paddingL 10, paddingR 10]
+     ]
 
 renderInventory :: [GameObject] -> WidgetNode GameState AppEvent
 renderInventory objs =

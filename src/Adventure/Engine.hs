@@ -22,7 +22,7 @@ import System.Console.Haskeline
 
 import Adventure.List.Utils
 
-newtype EntityId a = EntityId Int
+newtype EntityId a = EntityId { getEntityId :: Int }
   deriving (Eq, Ord, Show)
 
 data Room
@@ -67,12 +67,21 @@ data GameObject
   }
   deriving (Eq, Show)
 
+data ExitLock
+  = ExitLock
+  { _exitLockKeyItems :: [EntityId Item]
+  , _exitLockFailText :: Text
+  , _exitLockSuccessText :: Text
+  }
+  deriving (Eq, Show)
+
 data Exit
   = Exit
   { _exitName        :: Text
   , _exitDescription :: Text
   , _exitFrom        :: EntityId Room
   , _exitTo          :: EntityId Room
+  , _exitLock        :: Maybe ExitLock
   }
   deriving (Eq, Show)
 
@@ -82,6 +91,7 @@ data Scene
   , _sceneDescription :: Text
   , _sceneObjects     :: [GameObject]
   , _sceneExits       :: [Exit]
+  , _sceneMessages    :: [Text]
   }
   deriving (Eq, Show)
 
@@ -180,6 +190,7 @@ frontDoorOutside = Exit
   "It looks like it hasn't been opened in a long time."
   (EntityId 0)
   (EntityId 6)
+  (Just . ExitLock [EntityId 1] "You find it won't budge..." $ "You knock in the door with the shovel!")
 
 frontDoorInside :: Exit
 frontDoorInside = Exit
@@ -187,6 +198,7 @@ frontDoorInside = Exit
   "You came through here."
   (EntityId 6)
   (EntityId 0)
+  Nothing
 
 defaultWorld :: World
 defaultWorld = World
@@ -306,15 +318,28 @@ handleWalk world args = do
   let rooms      = _worldRooms world
       playerRoom = _playerRoom world
       exitName   = keyArg args
+      messages   = _worldLogMessages world
 
   exit <- exitCurrentRoom world exitName
   _ <- maybeToRight (RoomDoesNotExist (_exitFrom exit)) $
     M.lookup (_exitFrom exit) rooms
   _ <- maybeToRight (RoomDoesNotExist (_exitTo exit)) $
     M.lookup (_exitTo exit) rooms
-  if _exitFrom exit /= playerRoom
-    then Left SpaceWizard
-    else pure $ world { _playerRoom = _exitTo exit }
+  case _exitLock exit of
+    Nothing -> movePlayer exit playerRoom world
+    Just (ExitLock exitKeyItems errText successText)
+      | playerHasKeyItems (M.elems . _playerInventory $ world) exitKeyItems ->
+        movePlayer exit playerRoom world
+      | otherwise -> pure $ world { _worldLogMessages = errText : messages }
+  where
+    movePlayer :: Exit -> EntityId Room -> World -> Either GameError World
+    movePlayer ext rm wrld
+      | _exitFrom ext == rm = pure $ wrld { _playerRoom = _exitTo ext }
+      | otherwise           = Left SpaceWizard
+    playerHasKeyItems :: [EntityId GameObject] -> [EntityId Item] -> Bool
+    playerHasKeyItems playerInventory exitKeyItems =
+      let exitEntityIds = map getEntityId exitKeyItems
+      in exitEntityIds `intersect` (map getEntityId playerInventory) == exitEntityIds
 
 handlePickup :: CommandHandler
 handlePickup _ [] = Left $ MissingParameter "pickup what?"
@@ -435,7 +460,7 @@ handleTake w args = case splitAtWord "from" args of
           }
 
 render :: World -> Either GameError Scene
-render w@(World _ _ exits _ playerInv _) = do
+render w@(World _ _ exits _ playerInv messages) = do
   room       <- currentRoom w
   objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
@@ -444,6 +469,7 @@ render w@(World _ _ exits _ playerInv _) = do
     , _sceneDescription = _roomDescription room
     , _sceneObjects = objects'
     , _sceneExits = exits'
+    , _sceneMessages = messages
     }
   where
     getExit exitId =
@@ -502,7 +528,7 @@ updateGame g@(GameState vs w rvs input errors) =
         Left renderErr -> updateGameErrors g renderErr
         Right rendered ->
           g & scenes .~ rendered : rvs
-            & world .~ world'
+            & world .~ world' { _worldLogMessages = [] }
             & inputBuffer .~ ""
   where
     updateGameErrors :: GameState -> GameError -> GameState
