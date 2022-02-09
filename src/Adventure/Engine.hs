@@ -16,6 +16,7 @@ import Data.Bifunctor
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
+import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import System.Console.Haskeline
@@ -31,6 +32,7 @@ data Room
   , _roomDescription :: Text
   , _roomObjects     :: Map Text (EntityId GameObject)
   , _roomExits       :: Map Text (EntityId Exit)
+  , _roomDig         :: Either Text [(Text, Maybe (EntityId GameObject))]
   }
   deriving (Eq, Show)
 
@@ -67,6 +69,15 @@ data GameObject
   , _gameObjectObject      :: Object
   }
   deriving (Eq, Show)
+
+itemObject :: GameObject -> Maybe Item
+itemObject (GameObject _ _ (ObjectItem item)) = pure item
+itemObject _                 = Nothing
+
+itemObjectVerbAliasMap :: GameObject -> Maybe (Map Verb Verb)
+itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item))
+  = pure . M.fromList . _itemVerbs $ item
+itemObjectVerbAliasMap _ = Nothing
 
 data ExitLock
   = ExitLock
@@ -125,6 +136,13 @@ getObjectInCurrentRoom w objectName = do
   room <- currentRoom w
   fetch (ObjectNotInRoom objectName) objectName $ _roomObjects room
 
+updateCurrentRoom :: World -> Room -> Either GameError World
+updateCurrentRoom w room =
+  let roomMap = _worldRooms w
+  in pure $ w
+     { _worldRooms = M.update (const . Just $ room) (_playerRoom w) roomMap
+     }
+
 getObjectInInventory :: World -> Text -> Either GameError (EntityId GameObject)
 getObjectInInventory w objectName =
   fetch (ObjectNotInInventory objectName) objectName $ _playerInventory w
@@ -161,6 +179,11 @@ frontPorch = Room
   "There's a faded white picket fence in the yard and an old swing next to you."
   (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2)])
   (M.fromList [("front door", EntityId 3)])
+  (Right [ ( "You get a little hot digging but find something..."
+           , Just $ EntityId 9
+           )
+         ]
+  )
 
 mainHall :: Room
 mainHall = Room
@@ -168,6 +191,7 @@ mainHall = Room
   "The main hall of the house is plastered in yellowing wall paper."
   (M.fromList [("brolly bucket", EntityId 8)])
   (M.fromList [("door", EntityId 5)])
+  (Left "You can't do that here...")
 
 shovel :: GameObject
 shovel = GameObject "Shovel" "A rusted shovel with a wooden handle."
@@ -185,6 +209,11 @@ bucket :: GameObject
 bucket
   = GameObject "Brolly Bucket" "A rusting, iron bucket. There may be some brollies in it."
   $ container 4 (M.fromList [("brolly", EntityId 7)])
+
+coin :: GameObject
+coin
+ = GameObject "A Wierd Coin" "A coin with a face that is hard to discern."
+  $ item 1 1 []
 
 frontDoorOutside :: Exit
 frontDoorOutside = Exit
@@ -210,6 +239,7 @@ defaultWorld = World
    , (EntityId 2, purse)
    , (EntityId 7, magicBrolly)
    , (EntityId 8, bucket)
+   , (EntityId 9, coin)
    ])
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
   (EntityId 0)
@@ -311,6 +341,7 @@ handleVerb (Verb "drop") w args = handleDrop w args
 handleVerb (Verb "look") w args = handleLook w args
 handleVerb (Verb "examine") w args = handleExamine w args
 handleVerb (Verb "take") w args = handleTake w args
+handleVerb (Verb "dig") w args = handleDig w args
 handleVerb v _ _ = Left $ UnrecognizedVerb v
 
 handleWalk :: CommandHandler
@@ -354,11 +385,14 @@ handlePickup world args = do
   objectId <- getObjectInCurrentRoom world objectName
   _ <- maybeToRight SpaceWizard $
     M.lookup playerRoom rooms
-  _ <- maybeToRight (ObjectDoesNotExist objectId) $
+  object <- maybeToRight (ObjectDoesNotExist objectId) $
     M.lookup objectId objects
+  -- TODO (james): add support for container verbiage
+  itemVerbs <- maybeToRight SpaceWizard . itemObjectVerbAliasMap $ object
   pure $ world
     { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
     , _playerInventory = M.insert objectName objectId playerInv
+    , _playerVerbs = M.union (_playerVerbs world) itemVerbs
     }
   where
     removeItem objectName r = r
@@ -392,17 +426,23 @@ lookInContainer w containerName = do
 handleDrop :: CommandHandler
 handleDrop _ [] = Left $ MissingParameter "drop what?"
 handleDrop world args = do
-  let playerPos = _playerRoom world
-      playerInv = _playerInventory world
-      rooms     = _worldRooms world
-      objectName = keyArg args
+  let playerPos   = _playerRoom world
+      playerInv   = _playerInventory world
+      playerVerbs = _playerVerbs world
+      rooms       = _worldRooms world
+      objectName  = keyArg args
 
   objectId <- maybeToRight (ObjectNotInInventory objectName) $
     M.lookup objectName (_playerInventory world)
+  object <- maybeToRight (ObjectNotInInventory objectName) $
+    M.lookup objectId (_worldObjects world)
+
+  let objectVerbs = fromMaybe M.empty . itemObjectVerbAliasMap $ object
 
   pure $ world
     { _worldRooms = M.adjust (addObject objectName objectId) playerPos rooms
     , _playerInventory = M.delete objectName playerInv
+    , _playerVerbs = M.difference playerVerbs objectVerbs
     }
   where
     addObject objectName objectId r
@@ -459,6 +499,28 @@ handleTake w args = case splitAtWord "from" args of
           { _worldObjects = M.insert objectId object' objects
           , _playerInventory = M.insert itemName itemId playerInv
           }
+
+handleDig :: CommandHandler
+handleDig world args = do
+  let msgs = _worldLogMessages world
+      playerInv = _playerInventory world
+  room <- currentRoom world
+  case _roomDig room of
+    Left failMsg -> pure $ world { _worldLogMessages = msgs <> [failMsg] }
+    Right [] ->
+      pure $ world { _worldLogMessages = msgs <> ["You dig but nothing seems to come of it..."] }
+    Right ((successMsg, mItem):rest) -> do
+      let room' = room { _roomDig = const rest <$> _roomDig room }
+      world'' <- updateCurrentRoom world room'
+      case mItem of
+        Nothing -> do
+          pure $ world'' { _worldLogMessages = msgs <> [successMsg] }
+        Just itemId -> do
+          object <- getObject world itemId
+          pure $ world''
+            { _playerInventory = M.insert (_gameObjectName object) itemId playerInv
+            , _worldLogMessages = msgs <> [successMsg]
+            }
 
 render :: World -> Either GameError Scene
 render w@(World _ _ exits _ playerInv _ messages) = do
