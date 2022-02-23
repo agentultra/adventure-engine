@@ -162,6 +162,13 @@ getObject :: Monad m => World -> EntityId GameObject -> ExceptT GameError m Game
 getObject w objectId =
   fetch (ObjectDoesNotExist objectId) objectId $ _worldObjects w
 
+-- TODO (james): Might replace this with accessors into some kind of player state record
+getPlayerInventory :: GameState -> [GameObject]
+getPlayerInventory gameState =
+  case runExcept $ getInventoryObjects $ _gameStateWorld gameState of
+    Left err -> error $ "Error getting inventory: " ++ show err
+    Right objects -> objects
+
 -- TODO (james): a better way to show errors
 data GameState
   = GameState

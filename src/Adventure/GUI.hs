@@ -8,7 +8,6 @@ import qualified Monomer.Lens as L
 
 import Control.Exception
 import Control.Lens
-import Control.Monad.Except
 import Data.Either
 import Data.List
 import Data.Maybe
@@ -39,7 +38,7 @@ buildUI env model = widgetTree
     gameViewArea
       = hstack
       [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
-      , renderInventory $ tryRenderPlayerInventory model
+      , renderInventory $ getPlayerInventory model
       ]
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
@@ -49,12 +48,6 @@ buildUI env model = widgetTree
       , textField_ inputBuffer [onChange AppInputUpdated]
       , scroll_ [] renderedErrorLabels `styleBasic` [height 28, padding 5]
       ] `styleBasic` [padding 10]
-    -- TODO (james): this data should be moved into the game state
-    tryRenderPlayerInventory :: GameState -> [GameObject]
-    tryRenderPlayerInventory model =
-      case runExcept $ getInventoryObjects $ model ^. world of
-        Left err -> error "Error getting inventory"
-        Right objects -> objects
 
 renderedScene :: Scene -> WidgetNode GameState AppEvent
 renderedScene (Scene roomName roomDescription objects exits msgs) =
