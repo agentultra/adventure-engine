@@ -1,30 +1,58 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Adventure.Engine where
 
 import Control.Exception
-import Control.Lens
+import Control.Lens hiding ((.=))
 import Control.Monad.Except
-import Control.Monad.State
+import Control.Monad.State.Strict
+import Control.Monad.Writer.Strict
+import Data.Aeson ((.=), (.:))
+import qualified Data.Aeson as JSON
+import qualified Data.ByteString.Lazy as LBS
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
 import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.IO as T
+import GHC.Generics
 import System.Console.Haskeline
+import System.FilePath
 
 import Adventure.List.Utils
 
 newtype EntityId a = EntityId { getEntityId :: Int }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Generic, Ord, Show)
+
+deriving anyclass instance JSON.ToJSON (EntityId Room)
+deriving anyclass instance JSON.ToJSONKey (EntityId Room)
+deriving anyclass instance JSON.ToJSON (EntityId Exit)
+deriving anyclass instance JSON.ToJSONKey (EntityId Exit)
+deriving anyclass instance JSON.ToJSON (EntityId GameObject)
+deriving anyclass instance JSON.ToJSONKey (EntityId GameObject)
+deriving anyclass instance JSON.ToJSON (EntityId Item)
+
+deriving anyclass instance JSON.FromJSON (EntityId Room)
+deriving anyclass instance JSON.FromJSONKey (EntityId Room)
+deriving anyclass instance JSON.FromJSON (EntityId Exit)
+deriving anyclass instance JSON.FromJSONKey (EntityId Exit)
+deriving anyclass instance JSON.FromJSON (EntityId GameObject)
+deriving anyclass instance JSON.FromJSONKey (EntityId GameObject)
+deriving anyclass instance JSON.FromJSON (EntityId Item)
 
 data Room
   = Room
@@ -34,7 +62,10 @@ data Room
   , _roomExits       :: Map Text (EntityId Exit)
   , _roomDig         :: Either Text [(Text, Maybe (EntityId GameObject))]
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Room
+deriving instance JSON.FromJSON Room
 
 data Item
   = Item
@@ -42,7 +73,10 @@ data Item
   , _itemWeight' :: Int
   , _itemVerbs   :: [(Verb, Verb)]
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Item
+deriving instance JSON.FromJSON Item
 
 item :: Int -> Int -> [(Verb, Verb)] -> Object
 item size weight = ObjectItem . Item size weight
@@ -52,7 +86,10 @@ data Container
   { _containerSize  :: Int
   , _containerItems :: Map ItemName (EntityId GameObject)
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Container
+deriving instance JSON.FromJSON Container
 
 container :: Int -> Map ItemName (EntityId GameObject) -> Object
 container size = ObjectContainer . Container size
@@ -60,7 +97,10 @@ container size = ObjectContainer . Container size
 data Object
   = ObjectItem Item
   | ObjectContainer Container
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Object
+deriving instance JSON.FromJSON Object
 
 data GameObject
   = GameObject
@@ -68,7 +108,10 @@ data GameObject
   , _gameObjectDescription :: Text
   , _gameObjectObject      :: Object
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON GameObject
+deriving instance JSON.FromJSON GameObject
 
 itemObject :: GameObject -> Maybe Item
 itemObject (GameObject _ _ (ObjectItem item')) = pure item'
@@ -81,11 +124,14 @@ itemObjectVerbAliasMap _ = Nothing
 
 data ExitLock
   = ExitLock
-  { _exitLockKeyItems :: [EntityId Item]
-  , _exitLockFailText :: Text
+  { _exitLockKeyItems    :: [EntityId Item]
+  , _exitLockFailText    :: Text
   , _exitLockSuccessText :: Text
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON ExitLock
+deriving instance JSON.FromJSON ExitLock
 
 data Exit
   = Exit
@@ -95,7 +141,10 @@ data Exit
   , _exitTo          :: EntityId Room
   , _exitLock        :: Maybe ExitLock
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Exit
+deriving instance JSON.FromJSON Exit
 
 data Scene
   = Scene
@@ -105,7 +154,10 @@ data Scene
   , _sceneExits       :: [Exit]
   , _sceneMessages    :: [Text]
   }
-  deriving (Eq, Show)
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Scene
+deriving instance JSON.FromJSON Scene
 
 data World
   = World
@@ -118,6 +170,28 @@ data World
   , _worldLogMessages :: [Text]
   }
   deriving (Eq, Show)
+
+instance JSON.ToJSON World where
+  toJSON (World rooms objects exits pRoom pInv pVerbs _) =
+    JSON.object
+    [ "rooms"           .= rooms
+    , "objects"         .= objects
+    , "exits"           .= exits
+    , "playerRoom"      .= pRoom
+    , "playerInventory" .= pInv
+    , "playerVerbs"     .= pVerbs
+    ]
+
+instance JSON.FromJSON World where
+  parseJSON = JSON.withObject "World" $ \v ->
+    World
+    <$> v .: "rooms"
+    <*> v .: "objects"
+    <*> v .: "exits"
+    <*> v .: "playerRoom"
+    <*> v .: "playerInventory"
+    <*> v .: "playerVerbs"
+    <*> pure mempty
 
 fetch :: (Monad m, Ord k) => GameError -> k -> Map k v -> ExceptT GameError m v
 fetch e key db = maybe (throwError e) pure $ M.lookup key db
@@ -177,10 +251,25 @@ data GameState
   , _gameStateInputBuffer :: Text
   , _gameStateGameErrors  :: [GameError]
   }
-  deriving (Eq)
+  deriving (Eq, Show)
+
+instance JSON.ToJSON GameState where
+  toJSON (GameState world scenes _ _) =
+    JSON.object
+    [ "world" .= world
+    , "scenes" .= scenes
+    ]
+
+instance JSON.FromJSON GameState where
+  parseJSON = JSON.withObject "GameState" $ \v ->
+    GameState
+    <$> v .: "world"
+    <*> v .: "scenes"
+    <*> pure mempty
+    <*> pure mempty
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
-  deriving
+  deriving newtype
     ( Applicative
     , Functor
     , Monad
@@ -327,6 +416,7 @@ data GameError
   | MissingCommand
   | UnrecognizedVerb Verb
   | MissingParameter Text
+  | SaveLoadError Text
   | SpaceWizard
   deriving (Eq, Show)
 
@@ -345,6 +435,7 @@ gameErrorText = \case
   MissingCommand             -> "Did you mean to give me a command?"
   UnrecognizedVerb v         -> "I don't know what you mean by, '" <> unVerb v <> "'."
   MissingParameter txt       -> "I'm missing more information about, '" <> txt <> "'."
+  SaveLoadError txt          -> "Error loading save file: " <> txt
   SpaceWizard                -> "SPACE WIZARD!!!!"
 
 handleVerb :: Monad m => Verb -> World -> [Text] -> ExceptT GameError m World
@@ -555,7 +646,12 @@ render w@(World _ _ exits _ playerInv _ messages) = do
         Just exit -> pure exit
 
 newtype Verb = Verb { unVerb :: Text }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Generic, Ord, Show)
+
+deriving anyclass instance JSON.ToJSON Verb
+deriving anyclass instance JSON.ToJSONKey Verb
+deriving anyclass instance JSON.FromJSON Verb
+deriving anyclass instance JSON.FromJSONKey Verb
 
 -- Utilities
 
@@ -628,3 +724,43 @@ handleUserCommand state' =
   in if inputTxt == "$quit"
   then Quit
   else Update
+
+class Monad m => MonadReadFile m where
+  readAFile :: FilePath -> m Text
+
+instance MonadReadFile IO where
+  readAFile = T.readFile
+
+type StubMonadReadFile = [(FilePath, Text)]
+
+instance Monad m => MonadReadFile (StateT StubMonadReadFile m) where
+  readAFile fpath = do
+    stubFiles <- get
+    case lookup fpath stubFiles of
+      Nothing  -> error "No such file"
+      Just txt -> pure txt
+
+class Monad m => MonadWriteFile m where
+  writeAFile :: FilePath -> Text -> m ()
+
+instance MonadWriteFile IO where
+  writeAFile = T.writeFile
+
+instance MonadIO m => MonadWriteFile (WriterT [(FilePath, Text)] m) where
+  writeAFile fpath txt = tell [(fpath, txt)]
+
+-- Special Commands
+
+saveGameState :: MonadWriteFile m => FilePath -> GameState -> ExceptT GameError m (FilePath, Text)
+saveGameState fpath gameState = do
+  let saveFilePath = "~/.adventure-engine" </> "saves" </> fpath
+      saveFileContents = T.decodeUtf8 . LBS.toStrict . JSON.encode $ gameState
+  lift . writeAFile saveFilePath $ saveFileContents
+  pure (saveFilePath, saveFileContents)
+
+loadGameState :: MonadReadFile m => FilePath -> ExceptT GameError m GameState
+loadGameState fileName = do
+  rawContents <- lift . readAFile $ "~/.adventure-engine" </> "saves" </> fileName
+  case JSON.eitherDecode' . LBS.fromStrict . T.encodeUtf8 $ rawContents of
+    Left decodeError -> throwError . SaveLoadError . T.pack $ decodeError
+    Right gameState -> pure gameState

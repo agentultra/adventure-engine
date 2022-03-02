@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: fa9d048ef58bc04b2feab2594ccb98e47820d6d59da79bea1ec7c81d41eae757
+-- hash: 142fc14a6e37e1104f11455c8b6ec84a0e4f609b77fd0b5178926f5988883c6b
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -40,9 +40,12 @@ library
       LambdaCase
       OverloadedStrings
   build-depends:
-      base >=4.7 && <5
+      aeson
+    , base >=4.7 && <5
+    , bytestring
     , containers
     , data-default
+    , filepath
     , haskeline
     , lens
     , monomer
@@ -80,4 +83,7 @@ test-suite adventure-engine-test
   build-depends:
       adventure-engine
     , base >=4.7 && <5
+    , hspec
+    , mtl
+    , text
   default-language: Haskell2010

@@ -30,8 +30,11 @@ default-extensions:
 library:
   source-dirs: src
   dependencies:
+  - aeson
+  - bytestring
   - containers
   - data-default
+  - filepath
   - haskeline
   - lens
   - monomer
@@ -60,3 +63,6 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - adventure-engine
+    - hspec
+    - mtl
+    - text
