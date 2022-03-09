@@ -21,6 +21,7 @@ import Control.Monad.Writer.Strict
 import Data.Aeson ((.=), (.:))
 import qualified Data.Aeson as JSON
 import qualified Data.ByteString.Lazy as LBS
+import Data.Char
 import Data.List
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
@@ -31,6 +32,7 @@ import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
 import GHC.Generics
 import System.Console.Haskeline
+import System.Directory
 import System.FilePath
 
 import Adventure.List.Utils
@@ -249,7 +251,7 @@ data GameState
   { _gameStateWorld       :: World
   , _gameStateScenes      :: [Scene]
   , _gameStateInputBuffer :: Text
-  , _gameStateGameErrors  :: [GameError]
+  , _gameStateGameErrors  :: [Text]
   }
   deriving (Eq, Show)
 
@@ -416,6 +418,7 @@ data GameError
   | MissingCommand
   | UnrecognizedVerb Verb
   | MissingParameter Text
+  | SaveFileError Text
   | SaveLoadError Text
   | SpaceWizard
   deriving (Eq, Show)
@@ -710,20 +713,23 @@ updateGame g@(GameState w rvs input errors) =
   where
     updateGameErrors :: GameState -> GameError -> GameState
     updateGameErrors (GameState _ _ _ errs) e
-      | length errs < 3 = g & gameErrors .~ e : errs
-      | otherwise = g & gameErrors .~ prepend e errs
+      | length errs < 3 = g & gameErrors .~ gameErrorText e : errs
+      | otherwise = g & gameErrors .~ prepend (gameErrorText e) errs
 
 data UserCommandResult
   = Quit
+  | SaveGame FilePath
   | Update
   deriving (Eq, Show)
 
 handleUserCommand :: GameState -> UserCommandResult
 handleUserCommand state' =
   let inputTxt = state' ^. inputBuffer
-  in if inputTxt == "$quit"
-  then Quit
-  else Update
+      input = T.split isSpace inputTxt
+  in case input of
+    ("$quit":_) -> Quit
+    ("$save":fname:_) -> SaveGame . T.unpack $ fname
+    _       -> Update
 
 class Monad m => MonadReadFile m where
   readAFile :: FilePath -> m Text
@@ -753,10 +759,9 @@ instance MonadIO m => MonadWriteFile (WriterT [(FilePath, Text)] m) where
 
 saveGameState :: MonadWriteFile m => FilePath -> GameState -> ExceptT GameError m (FilePath, Text)
 saveGameState fpath gameState = do
-  let saveFilePath = "~/.adventure-engine" </> "saves" </> fpath
-      saveFileContents = T.decodeUtf8 . LBS.toStrict . JSON.encode $ gameState
-  lift . writeAFile saveFilePath $ saveFileContents
-  pure (saveFilePath, saveFileContents)
+  let saveFileContents = T.decodeUtf8 . LBS.toStrict . JSON.encode $ gameState
+  lift . writeAFile fpath $ saveFileContents
+  pure (fpath, saveFileContents)
 
 loadGameState :: MonadReadFile m => FilePath -> ExceptT GameError m GameState
 loadGameState fileName = do
@@ -764,3 +769,9 @@ loadGameState fileName = do
   case JSON.eitherDecode' . LBS.fromStrict . T.encodeUtf8 $ rawContents of
     Left decodeError -> throwError . SaveLoadError . T.pack $ decodeError
     Right gameState -> pure gameState
+
+ensureDirectories :: IO ()
+ensureDirectories = do
+  userHomeRoot <- getHomeDirectory
+  createDirectoryIfMissing False $ userHomeRoot </> ".adventure-engine"
+  createDirectoryIfMissing False $ userHomeRoot </> ".adventure-engine" </> "saves"

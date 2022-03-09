@@ -8,6 +8,7 @@ import qualified Monomer.Lens as L
 
 import Control.Exception
 import Control.Lens
+import Control.Monad.Except
 import Data.Either
 import Data.List
 import Data.Maybe
@@ -16,12 +17,15 @@ import qualified Data.Text as T
 import Adventure.Engine
 import Adventure.GUI.Widgets.Keystroke
 import Adventure.List.Utils
+import System.FilePath
+import System.Directory
 
 data AppEvent
   = AppInit
   | AppInputReceived -- TODO (james): This should be InputEntered
   | AppInputUpdated Text
   | AppShowLastMsg
+  | AppGameSaved SaveFileResult
   deriving (Eq, Show)
 
 -- UI
@@ -42,7 +46,7 @@ buildUI env model = widgetTree
       ]
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
-    renderedErrorLabels = vstack $ intersperse spacer $ map (label . gameErrorText) $ model ^. gameErrors
+    renderedErrorLabels = vstack $ intersperse spacer $ map label $ model ^. gameErrors
     widgetTree = keystroke  [("Enter", AppInputReceived)] $ vstack
       [ gameViewArea
       , textField_ inputBuffer [onChange AppInputUpdated]
@@ -83,11 +87,19 @@ handleEvent env node model event =
     AppInputReceived ->
       case handleUserCommand model of
         Quit -> [ exitApplication ]
+        SaveGame fname -> [ Model $ model & inputBuffer .~ ""
+                          , Task $ AppGameSaved <$> doGameSave fname model
+                          ]
         Update -> [ Model $ updateGame model,
                     Event AppShowLastMsg
                   ]
     AppInputUpdated txt -> [ Model $ model & inputBuffer .~ txt ]
     AppShowLastMsg -> scrollToNode env node "bottomMarker"
+    AppGameSaved result ->
+      let message = case result of
+            FileNotSaved fpath -> "Failed to save file: " <> fpath
+            FileSaved fpath -> "Saved: " <> fpath
+      in [ Model $ model & gameErrors .~ message :  model ^. gameErrors ]
 
 scrollToNode :: WidgetEnv GameState AppEvent
   -> WidgetNode GameState AppEvent
@@ -109,7 +121,26 @@ config
     , appInitEvent AppInit
     ]
 
+data SaveFileResult
+  = FileSaved Text
+  | FileNotSaved Text
+  deriving (Eq, Show)
+
+doGameSave :: FilePath -> GameState -> IO SaveFileResult
+doGameSave fname gameState = do
+  homeDirRoot <- getHomeDirectory
+  let saveGamePath = homeDirRoot </> ".adventure-engine" </> "saves" </> fname
+  result <- runExceptT . saveGameState saveGamePath $ gameState
+  case result of
+    Left _ ->
+      -- TODO (james): add debug logging
+      pure . FileNotSaved $ "Failed to save game: " <> T.pack fname
+    Right (returnFpath, _) ->
+      pure . FileSaved $ T.pack fname
+
 start :: IO ()
-start = case initialGameState of
-  Left err -> throw err
-  Right initialState -> startApp initialState handleEvent buildUI config
+start = do
+  ensureDirectories
+  case initialGameState of
+    Left err -> throw err
+    Right initialState -> startApp initialState handleEvent buildUI config
