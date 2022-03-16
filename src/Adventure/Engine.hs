@@ -87,14 +87,15 @@ data Container
   = Container
   { _containerSize  :: Int
   , _containerItems :: Map ItemName (EntityId GameObject)
+  , _containerLock  :: Maybe Lock
   }
   deriving (Eq, Generic, Show)
 
 deriving instance JSON.ToJSON Container
 deriving instance JSON.FromJSON Container
 
-container :: Int -> Map ItemName (EntityId GameObject) -> Object
-container size = ObjectContainer . Container size
+container :: Int -> Map ItemName (EntityId GameObject) -> Maybe Lock -> Object
+container size containerItems containerLock = ObjectContainer $ Container size containerItems containerLock
 
 data Object
   = ObjectItem Item
@@ -134,6 +135,23 @@ data ExitLock
 
 deriving instance JSON.ToJSON ExitLock
 deriving instance JSON.FromJSON ExitLock
+
+data LockState = Locked | Unlocked
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON LockState
+deriving instance JSON.FromJSON LockState
+
+data Lock
+  = Lock
+  { _lockKeyItems     :: [EntityId Item]
+  , _lockKeyErrorMsgs :: Map Verb Text
+  , _lockState        :: LockState
+  }
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON Lock
+deriving instance JSON.FromJSON Lock
 
 data Exit
   = Exit
@@ -283,7 +301,7 @@ frontPorch :: Room
 frontPorch = Room
   "The Front Porch"
   "There's a faded white picket fence in the yard and an old swing next to you."
-  (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2)])
+  (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2), ("fire", EntityId 10)])
   (M.fromList [("front door", EntityId 3)])
   (Right [ ( "You get a little hot digging but find something..."
            , Just $ EntityId 9
@@ -314,12 +332,19 @@ magicBrolly
 bucket :: GameObject
 bucket
   = GameObject "Brolly Bucket" "A rusting, iron bucket. There may be some brollies in it."
-  $ container 4 (M.fromList [("brolly", EntityId 7)])
+  $ container 4 (M.fromList [("brolly", EntityId 7)]) Nothing
 
 coin :: GameObject
 coin
  = GameObject "A Wierd Coin" "A coin with a face that is hard to discern."
   $ item 1 1 []
+
+fireLock :: Lock
+fireLock = Lock [] (M.fromList [(Verb "look", "It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames.")]) Locked
+
+fire :: GameObject
+fire = GameObject "A Roaring Fire" "A roaring fire fed by some unknown source of fuel. If you look closely there is some object in the flames."
+  $ container 4 M.empty (Just fireLock)
 
 frontDoorOutside :: Exit
 frontDoorOutside = Exit
@@ -346,6 +371,7 @@ defaultWorld = World
    , (EntityId 7, magicBrolly)
    , (EntityId 8, bucket)
    , (EntityId 9, coin)
+   , (EntityId 10, fire)
    ])
   (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
   (EntityId 0)
@@ -439,6 +465,7 @@ gameErrorText = \case
   UnrecognizedVerb v         -> "I don't know what you mean by, '" <> unVerb v <> "'."
   MissingParameter txt       -> "I'm missing more information about, '" <> txt <> "'."
   SaveLoadError txt          -> "Error loading save file: " <> txt
+  SaveFileError txt          -> "Error saving file: " <> txt
   SpaceWizard                -> "SPACE WIZARD!!!!"
 
 handleVerb :: Monad m => Verb -> World -> [Text] -> ExceptT GameError m World
@@ -523,13 +550,21 @@ lookInContainer w containerName = do
   container'  <- getObject w containerId
   case _gameObjectObject container' of
     ObjectItem _ -> throwError $ InvalidObjectParameter containerName
-    ObjectContainer cont -> do
-      items <- traverse (getObject w) $ M.elems (_containerItems cont)
-      let itemNames = T.intercalate ", " . map _gameObjectName $ items
-      pure $ w
-        { _worldLogMessages = _worldLogMessages w
-          <> ["Inside the " <> containerName <> " you see: " <> itemNames]
-        }
+    ObjectContainer cont ->
+      case _containerLock cont of
+        Nothing -> do
+          items <- traverse (getObject w) $ M.elems (_containerItems cont)
+          let itemNames = T.intercalate ", " . map _gameObjectName $ items
+          pure $ w
+            { _worldLogMessages = _worldLogMessages w
+              <> ["Inside the " <> containerName <> " you see: " <> itemNames]
+            }
+        Just lck | _lockState lck == Locked -> do
+                     lockMsg <- maybeThrow SpaceWizard $ M.lookup (Verb "look") (_lockKeyErrorMsgs lck)
+                     pure $ w
+                       { _worldLogMessages = _worldLogMessages w <> [ lockMsg ]
+                       }
+                 | otherwise -> undefined
 
 handleDrop :: Monad m => World -> [Text] -> ExceptT GameError m World
 handleDrop _ [] = throwError $ MissingParameter "drop what?"
