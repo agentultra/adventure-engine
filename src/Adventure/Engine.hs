@@ -719,6 +719,7 @@ updateGame g@(GameState w rvs input errors) =
 data UserCommandResult
   = Quit
   | SaveGame FilePath
+  | LoadGame FilePath
   | Update
   deriving (Eq, Show)
 
@@ -729,6 +730,7 @@ handleUserCommand state' =
   in case input of
     ("$quit":_) -> Quit
     ("$save":fname:_) -> SaveGame . T.unpack $ fname
+    ("$load":fname:_) -> LoadGame . T.unpack $ fname
     _       -> Update
 
 class Monad m => MonadReadFile m where

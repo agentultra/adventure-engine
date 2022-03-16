@@ -26,6 +26,7 @@ data AppEvent
   | AppInputUpdated Text
   | AppShowLastMsg
   | AppGameSaved SaveFileResult
+  | AppGameLoaded LoadFileResult
   deriving (Eq, Show)
 
 -- UI
@@ -90,6 +91,7 @@ handleEvent env node model event =
         SaveGame fname -> [ Model $ model & inputBuffer .~ ""
                           , Task $ AppGameSaved <$> doGameSave fname model
                           ]
+        LoadGame fname -> [ Task $ AppGameLoaded <$> doGameLoad fname ]
         Update -> [ Model $ updateGame model,
                     Event AppShowLastMsg
                   ]
@@ -100,6 +102,10 @@ handleEvent env node model event =
             FileNotSaved fpath -> "Failed to save file: " <> fpath
             FileSaved fpath -> "Saved: " <> fpath
       in [ Model $ model & gameErrors .~ message :  model ^. gameErrors ]
+    AppGameLoaded result ->
+      case result of
+        FileNotLoaded msg -> [ Model $ model & gameErrors .~ msg : model ^. gameErrors ]
+        FileLoaded fname gamestate -> [ Model $ gamestate & gameErrors .~ ["Loaded: " <> fname] ]
 
 scrollToNode :: WidgetEnv GameState AppEvent
   -> WidgetNode GameState AppEvent
@@ -126,6 +132,11 @@ data SaveFileResult
   | FileNotSaved Text
   deriving (Eq, Show)
 
+data LoadFileResult
+  = FileNotLoaded Text
+  | FileLoaded Text GameState
+  deriving (Eq, Show)
+
 doGameSave :: FilePath -> GameState -> IO SaveFileResult
 doGameSave fname gameState = do
   homeDirRoot <- getHomeDirectory
@@ -137,6 +148,17 @@ doGameSave fname gameState = do
       pure . FileNotSaved $ "Failed to save game: " <> T.pack fname
     Right (returnFpath, _) ->
       pure . FileSaved $ T.pack fname
+
+doGameLoad :: FilePath -> IO LoadFileResult
+doGameLoad fname = do
+  homeDirRoot <- getHomeDirectory
+  let saveGamePath = homeDirRoot </> ".adventure-engine" </> "saves" </> fname
+  result <- runExceptT . loadGameState $ saveGamePath
+  case result of
+    Left _ ->
+      -- TODO (james): add debug logging
+      pure . FileNotLoaded $ "Failed to load: " <> T.pack fname
+    Right gameState -> pure $ FileLoaded (T.pack fname) gameState
 
 start :: IO ()
 start = do
