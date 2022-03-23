@@ -144,10 +144,10 @@ deriving instance JSON.FromJSON LockState
 
 data Lock
   = Lock
-  { _lockKeyItems       :: [EntityId Item]
-  , _lockKeyErrorMsgs   :: Map Verb Text
-  , _lockKeySuccessMsgs :: Map Verb Text
-  , _lockState          :: LockState
+  { _lockKeyItems   :: [EntityId GameObject]
+  , _lockFailMsg    :: Text
+  , _lockSuccessMsg :: Text
+  , _lockState      :: LockState
   }
   deriving (Eq, Generic, Show)
 
@@ -342,10 +342,10 @@ coin
 
 fireLock :: Lock
 fireLock = Lock
-  []
-  (M.fromList [(Verb "look", "It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames.")])
-  (M.fromList [(Verb "look", "Success! You have put the fire out...")])
-  Unlocked
+  [EntityId 1] -- the shovel
+  "It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames."
+  "Success! You have put the fire out..."
+  Locked
 
 fire :: GameObject
 fire = GameObject "A Roaring Fire" "A roaring fire fed by some unknown source of fuel. If you look closely there is some object in the flames."
@@ -405,6 +405,8 @@ defaultVerbAliasMap
   , (Verb "examine", Verb "examine")
   , (Verb "t", Verb "take")
   , (Verb "take", Verb "take")
+  , (Verb "use", Verb "use")
+  , (Verb "u", Verb "use")
   ]
 
 getVerb :: Monad m => VerbAliasMap -> Verb -> ExceptT GameError m Verb
@@ -444,9 +446,11 @@ data GameError
   | ObjectNotInInventory Text
   | ObjectNotInContainer Text
   | InvalidObjectParameter Text
+  | InvalidObjectInteraction Text Text Command
   | ExitDoesNotExist (EntityId Exit)
   | ExitDoesNotExist' Text
   | MissingCommand
+  | InvalidCommand Text
   | UnrecognizedVerb Verb
   | MissingParameter Text
   | SaveFileError Text
@@ -464,6 +468,8 @@ gameErrorText = \case
   ObjectNotInInventory txt   -> "You are not holding, '" <> txt <> "'."
   ObjectNotInContainer txt   -> "I don't see '" <> txt <> "' in there."
   InvalidObjectParameter txt -> "You can't really do that with, '" <> txt <> "'."
+  InvalidObjectInteraction s p _ -> "I don't know how to use " <> s <> " on " <> p
+  InvalidCommand _           -> "I don't think I understand!"
   ExitDoesNotExist _         -> "I don't see that exit here."
   ExitDoesNotExist' txt      -> "I don't see an exit called, '" <> txt <> "' here."
   MissingCommand             -> "Did you mean to give me a command?"
@@ -481,6 +487,7 @@ handleVerb (Verb "look") w args = handleLook w args
 handleVerb (Verb "examine") w args = handleExamine w args
 handleVerb (Verb "take") w args = handleTake w args
 handleVerb (Verb "dig") w args = handleDig w args
+handleVerb (Verb "use") w args = handleUse w args
 handleVerb v _ _ = throwError $ UnrecognizedVerb v
 
 handleWalk :: Monad m => World -> [Text] -> ExceptT GameError m World
@@ -560,11 +567,9 @@ lookInContainer w containerName = do
         Nothing -> doLookInContainer cont
         Just lck ->
           case _lockState lck of
-            Locked -> do
-              lockMsg <- maybeThrow SpaceWizard $ M.lookup (Verb "look") (_lockKeyErrorMsgs lck)
-              pure $ w
-                { _worldLogMessages = _worldLogMessages w <> [ lockMsg ]
-                }
+            Locked ->
+              let lockMsg = _lockFailMsg lck
+              in pure $ w { _worldLogMessages = _worldLogMessages w <> [ lockMsg ] }
             Unlocked -> doLookInContainer cont
   where
     doLookInContainer cont = do
@@ -673,6 +678,61 @@ handleDig world _ = do
             { _playerInventory = M.insert (_gameObjectName object) itemId playerInv
             , _worldLogMessages = msgs <> [successMsg]
             }
+
+data Command = Unlock deriving (Eq, Show)
+
+data ObjectInteraction
+  = ObjectInteraction
+  { objectInteractionSubject   :: EntityId GameObject
+  , objectInteractionPredicate :: EntityId GameObject
+  , objectInteractionCommand   :: Verb
+  }
+  deriving (Eq, Show)
+
+evalObjectInteraction :: Monad m => World -> ObjectInteraction -> ExceptT GameError m World
+evalObjectInteraction world (ObjectInteraction subjectId predicateId command) = do
+  subjectObject <- getObject world subjectId
+  predicateObject <- getObject world predicateId
+  doObjectCommand subjectObject predicateObject command
+  where
+    doObjectCommand :: Monad m => GameObject -> GameObject -> Verb -> ExceptT GameError m World
+    doObjectCommand subjObj predObj (Verb "use") =
+      case _gameObjectObject predObj of
+        ObjectItem _ ->
+          throwError
+          $ InvalidObjectInteraction
+          (_gameObjectName subjObj)
+          (_gameObjectName predObj)
+          Unlock
+        ObjectContainer c ->
+          case _containerLock c of
+            Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
+            Just lck | subjectId `elem` _lockKeyItems lck ->
+                       pure world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world) }
+            Just lck ->
+              let unlockError = _lockFailMsg lck
+              in pure $ world { _worldLogMessages = _worldLogMessages world <> [unlockError] }
+    doObjectCommand _ _ _ = throwError $ InvalidCommand ""
+
+    unlock :: Lock -> GameObject -> GameObject
+    unlock l@(Lock _ _ _ s) o@(GameObject _ _ (ObjectContainer c)) =
+      o { _gameObjectObject = ObjectContainer c { _containerLock = Just l { _lockState = flipLockState s } } }
+    unlock _ o = o
+
+    flipLockState :: LockState -> LockState
+    flipLockState Locked = Unlocked
+    flipLockState Unlocked = Locked
+
+handleUse :: Monad m => World -> [Text] -> ExceptT GameError m World
+handleUse world args = do
+  let msgs = _worldLogMessages world
+  case args of
+    (objectName:"on":predicateName:_) -> do
+      objectId <- getObjectInInventory world objectName
+      predId <- getObjectInCurrentRoom world predicateName
+      world' <- evalObjectInteraction world $ ObjectInteraction objectId predId (Verb "use")
+      pure $ world' { _worldLogMessages = msgs <> ["I will try to use " <> objectName <> " on " <> predicateName <> " if I can figure out how..."] }
+    _                            -> pure $ world { _worldLogMessages = msgs <> ["I don't know how to do that..."] }
 
 render :: Monad m => World -> ExceptT GameError m Scene
 render w@(World _ _ exits _ playerInv _ messages) = do
