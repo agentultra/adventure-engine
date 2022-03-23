@@ -144,9 +144,10 @@ deriving instance JSON.FromJSON LockState
 
 data Lock
   = Lock
-  { _lockKeyItems     :: [EntityId Item]
-  , _lockKeyErrorMsgs :: Map Verb Text
-  , _lockState        :: LockState
+  { _lockKeyItems       :: [EntityId Item]
+  , _lockKeyErrorMsgs   :: Map Verb Text
+  , _lockKeySuccessMsgs :: Map Verb Text
+  , _lockState          :: LockState
   }
   deriving (Eq, Generic, Show)
 
@@ -340,7 +341,11 @@ coin
   $ item 1 1 []
 
 fireLock :: Lock
-fireLock = Lock [] (M.fromList [(Verb "look", "It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames.")]) Locked
+fireLock = Lock
+  []
+  (M.fromList [(Verb "look", "It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames.")])
+  (M.fromList [(Verb "look", "Success! You have put the fire out...")])
+  Unlocked
 
 fire :: GameObject
 fire = GameObject "A Roaring Fire" "A roaring fire fed by some unknown source of fuel. If you look closely there is some object in the flames."
@@ -552,19 +557,23 @@ lookInContainer w containerName = do
     ObjectItem _ -> throwError $ InvalidObjectParameter containerName
     ObjectContainer cont ->
       case _containerLock cont of
-        Nothing -> do
-          items <- traverse (getObject w) $ M.elems (_containerItems cont)
-          let itemNames = T.intercalate ", " . map _gameObjectName $ items
-          pure $ w
-            { _worldLogMessages = _worldLogMessages w
-              <> ["Inside the " <> containerName <> " you see: " <> itemNames]
-            }
-        Just lck | _lockState lck == Locked -> do
-                     lockMsg <- maybeThrow SpaceWizard $ M.lookup (Verb "look") (_lockKeyErrorMsgs lck)
-                     pure $ w
-                       { _worldLogMessages = _worldLogMessages w <> [ lockMsg ]
-                       }
-                 | otherwise -> undefined
+        Nothing -> doLookInContainer cont
+        Just lck ->
+          case _lockState lck of
+            Locked -> do
+              lockMsg <- maybeThrow SpaceWizard $ M.lookup (Verb "look") (_lockKeyErrorMsgs lck)
+              pure $ w
+                { _worldLogMessages = _worldLogMessages w <> [ lockMsg ]
+                }
+            Unlocked -> doLookInContainer cont
+  where
+    doLookInContainer cont = do
+      items <- traverse (getObject w) $ M.elems (_containerItems cont)
+      let itemNames = T.intercalate ", " . map _gameObjectName $ items
+      pure $ w
+        { _worldLogMessages = _worldLogMessages w
+          <> ["Inside the " <> containerName <> " you see: " <> itemNames]
+        }
 
 handleDrop :: Monad m => World -> [Text] -> ExceptT GameError m World
 handleDrop _ [] = throwError $ MissingParameter "drop what?"
