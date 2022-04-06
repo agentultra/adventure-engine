@@ -83,18 +83,28 @@ deriving instance JSON.FromJSON Item
 item :: Int -> Int -> [(Verb, Verb)] -> Object
 item size weight = ObjectItem . Item size weight
 
+data ContainerLock
+  = ContainerLock
+  { _containerLockLock                :: Lock
+  , _containerLockUnlockedDescription :: Text
+  }
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON ContainerLock
+deriving instance JSON.FromJSON ContainerLock
+
 data Container
   = Container
   { _containerSize  :: Int
   , _containerItems :: Map ItemName (EntityId GameObject)
-  , _containerLock  :: Maybe Lock
+  , _containerLock  :: Maybe ContainerLock
   }
   deriving (Eq, Generic, Show)
 
 deriving instance JSON.ToJSON Container
 deriving instance JSON.FromJSON Container
 
-container :: Int -> Map ItemName (EntityId GameObject) -> Maybe Lock -> Object
+container :: Int -> Map ItemName (EntityId GameObject) -> Maybe ContainerLock -> Object
 container size containerItems containerLock = ObjectContainer $ Container size containerItems containerLock
 
 data Object
@@ -112,6 +122,11 @@ data GameObject
   , _gameObjectObject      :: Object
   }
   deriving (Eq, Generic, Show)
+
+describeGameObject :: GameObject -> Text
+describeGameObject (GameObject _ desc (ObjectContainer (Container _ _ (Just (ContainerLock (Lock _ _ _ Locked) _))))) = desc
+describeGameObject (GameObject _ _ (ObjectContainer (Container _ _ (Just (ContainerLock (Lock _ _ _ Unlocked) unlockedDesc))))) = unlockedDesc
+describeGameObject (GameObject _ desc _) = desc
 
 deriving instance JSON.ToJSON GameObject
 deriving instance JSON.FromJSON GameObject
@@ -253,6 +268,13 @@ getObjectInInventory w objectName =
 getInventoryObjects :: Monad m => World -> ExceptT GameError m [GameObject]
 getInventoryObjects w = traverse (getObject w) $ M.elems (_playerInventory w)
 
+putObjectInInventory
+  :: Text
+  -> EntityId GameObject
+  -> Map Text (EntityId GameObject)
+  -> Map Text (EntityId GameObject)
+putObjectInInventory objectName = M.insert (T.toLower objectName)
+
 getObject :: Monad m => World -> EntityId GameObject -> ExceptT GameError m GameObject
 getObject w objectId =
   fetch (ObjectDoesNotExist objectId) objectId $ _worldObjects w
@@ -349,7 +371,7 @@ fireLock = Lock
 
 fire :: GameObject
 fire = GameObject "A Roaring Fire" "A roaring fire fed by some unknown source of fuel. If you look closely there is some object in the flames."
-  $ container 4 M.empty (Just fireLock)
+  $ container 4 M.empty (Just (ContainerLock fireLock "A doused, empty fire pit."))
 
 frontDoorOutside :: Exit
 frontDoorOutside = Exit
@@ -538,7 +560,7 @@ handlePickup world args = do
   itemVerbs <- maybeThrow SpaceWizard . itemObjectVerbAliasMap $ object
   pure $ world
     { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
-    , _playerInventory = M.insert objectName objectId playerInv
+    , _playerInventory = putObjectInInventory objectName objectId playerInv
     , _playerVerbs = M.union (_playerVerbs world) itemVerbs
     }
   where
@@ -565,7 +587,7 @@ lookInContainer w containerName = do
     ObjectContainer cont ->
       case _containerLock cont of
         Nothing -> doLookInContainer cont
-        Just lck ->
+        Just (ContainerLock lck _) ->
           case _lockState lck of
             Locked ->
               let lockMsg = _lockFailMsg lck
@@ -632,7 +654,7 @@ examineInRoom world objectName = do
   objectId <- getObjectInCurrentRoom world objectName
   object   <- getObject world objectId
 
-  pure $ world {_worldLogMessages = msgs <> [_gameObjectDescription object]}
+  pure $ world {_worldLogMessages = msgs <> [describeGameObject object]}
 
 handleTake :: Monad m => World -> [Text] -> ExceptT GameError m World
 handleTake w args = case splitAtWord "from" args of
@@ -654,7 +676,7 @@ handleTake w args = case splitAtWord "from" args of
 
         pure $ w
           { _worldObjects = M.insert objectId object' objects
-          , _playerInventory = M.insert itemName itemId playerInv
+          , _playerInventory = putObjectInInventory itemName itemId playerInv
           }
 
 handleDig :: Monad m => World -> [Text] -> ExceptT GameError m World
@@ -675,7 +697,7 @@ handleDig world _ = do
         Just itemId -> do
           object <- getObject world itemId
           pure $ world''
-            { _playerInventory = M.insert (_gameObjectName object) itemId playerInv
+            { _playerInventory = putObjectInInventory (_gameObjectName object) itemId playerInv
             , _worldLogMessages = msgs <> [successMsg]
             }
 
@@ -707,17 +729,18 @@ evalObjectInteraction world (ObjectInteraction subjectId predicateId command) = 
         ObjectContainer c ->
           case _containerLock c of
             Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
-            Just lck | subjectId `elem` _lockKeyItems lck ->
+            Just (ContainerLock lck _) | subjectId `elem` _lockKeyItems lck ->
                        pure world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world)
                                   , _worldLogMessages = _lockSuccessMsg lck : _worldLogMessages world }
-            Just lck ->
+            Just (ContainerLock lck _) ->
               let unlockError = _lockFailMsg lck
               in pure $ world { _worldLogMessages = unlockError : _worldLogMessages world }
     doObjectCommand _ _ _ = throwError $ InvalidCommand ""
 
     unlock :: Lock -> GameObject -> GameObject
     unlock l@(Lock _ _ _ s) o@(GameObject _ _ (ObjectContainer c)) =
-      o { _gameObjectObject = ObjectContainer c { _containerLock = Just l { _lockState = flipLockState s } } }
+      let newLockState = l { _lockState = flipLockState s }
+      in o { _gameObjectObject = ObjectContainer c { _containerLock = (\cl -> cl { _containerLockLock = newLockState }) <$> _containerLock c } }
     unlock _ o = o
 
     flipLockState :: LockState -> LockState
