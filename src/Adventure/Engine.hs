@@ -343,7 +343,7 @@ coin
 fireLock :: Lock
 fireLock = Lock
   [EntityId 1] -- the shovel
-  "It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames."
+  "It doesn't work. It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames."
   "Success! You have put the fire out..."
   Locked
 
@@ -708,10 +708,11 @@ evalObjectInteraction world (ObjectInteraction subjectId predicateId command) = 
           case _containerLock c of
             Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
             Just lck | subjectId `elem` _lockKeyItems lck ->
-                       pure world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world) }
+                       pure world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world)
+                                  , _worldLogMessages = _lockSuccessMsg lck : _worldLogMessages world }
             Just lck ->
               let unlockError = _lockFailMsg lck
-              in pure $ world { _worldLogMessages = _worldLogMessages world <> [unlockError] }
+              in pure $ world { _worldLogMessages = unlockError : _worldLogMessages world }
     doObjectCommand _ _ _ = throwError $ InvalidCommand ""
 
     unlock :: Lock -> GameObject -> GameObject
@@ -726,13 +727,28 @@ evalObjectInteraction world (ObjectInteraction subjectId predicateId command) = 
 handleUse :: Monad m => World -> [Text] -> ExceptT GameError m World
 handleUse world args = do
   let msgs = _worldLogMessages world
-  case args of
-    (objectName:"on":predicateName:_) -> do
+      parseResult = parseArgs args
+  case parseResult of
+    Just (objectName, predicateName) -> do
       objectId <- getObjectInInventory world objectName
       predId <- getObjectInCurrentRoom world predicateName
-      world' <- evalObjectInteraction world $ ObjectInteraction objectId predId (Verb "use")
-      pure $ world' { _worldLogMessages = msgs <> ["I will try to use " <> objectName <> " on " <> predicateName <> " if I can figure out how..."] }
-    _                            -> pure $ world { _worldLogMessages = msgs <> ["I don't know how to do that..."] }
+      evalObjectInteraction world $ ObjectInteraction objectId predId (Verb "use")
+    Nothing -> pure $ world { _worldLogMessages = msgs <> ["I don't know how to do that..."] }
+  where
+    parseArgs :: [Text] -> Maybe (Text, Text)
+    parseArgs [] = Nothing
+    parseArgs args' =
+      case break (== "on") args' of
+        ([], _) -> Nothing
+        (_, []) -> Nothing
+        result  -> do
+          let (objectName, predicateName) = tupMap T.unwords (T.unwords . drop 1) result
+          if T.null objectName || T.null predicateName
+            then Nothing
+            else Just (objectName, predicateName)
+
+    tupMap :: (a -> b) -> (c -> d) -> (a, c) -> (b, d)
+    tupMap f g (x, y) = (f x, g y)
 
 render :: Monad m => World -> ExceptT GameError m Scene
 render w@(World _ _ exits _ playerInv _ messages) = do
