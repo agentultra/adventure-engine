@@ -14,6 +14,7 @@
 module Adventure.Engine where
 
 import Control.Exception
+import Control.Error (note)
 import Control.Lens hiding ((.=))
 import Control.Monad.Except
 import Control.Monad.State.Strict
@@ -35,6 +36,7 @@ import System.Console.Haskeline
 import System.Directory
 import System.FilePath
 
+import Adventure.Data.Map.Util
 import Adventure.List.Utils
 
 newtype EntityId a = EntityId { getEntityId :: Int }
@@ -140,17 +142,6 @@ itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item'))
   = pure . M.fromList . _itemVerbs $ item'
 itemObjectVerbAliasMap _ = Nothing
 
-data ExitLock
-  = ExitLock
-  { _exitLockKeyItems    :: [EntityId Item]
-  , _exitLockFailText    :: Text
-  , _exitLockSuccessText :: Text
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON ExitLock
-deriving instance JSON.FromJSON ExitLock
-
 data LockState = Locked | Unlocked
   deriving (Eq, Generic, Show)
 
@@ -175,7 +166,7 @@ data Exit
   , _exitDescription :: Text
   , _exitFrom        :: EntityId Room
   , _exitTo          :: EntityId Room
-  , _exitLock        :: Maybe ExitLock
+  , _exitLock        :: Maybe Lock
   }
   deriving (Eq, Generic, Show)
 
@@ -235,11 +226,12 @@ fetch e key db = maybe (throwError e) pure $ M.lookup key db
 currentRoom :: Monad m => World -> ExceptT GameError m Room
 currentRoom w = fetch SpaceWizard (_playerRoom w) (_worldRooms w)
 
-exitCurrentRoom :: Monad m => World -> Text -> ExceptT GameError m Exit
+exitCurrentRoom :: Monad m => World -> Text -> ExceptT GameError m (EntityId Exit, Exit)
 exitCurrentRoom w exitName = do
   room <- currentRoom w
   exitId <- fetch (ExitDoesNotExist' exitName) exitName (_roomExits room)
-  fetch SpaceWizard exitId (_worldExits w)
+  exit <- fetch SpaceWizard exitId (_worldExits w)
+  pure (exitId, exit)
 
 getObjectInCurrentRoom
   :: Monad m
@@ -278,6 +270,29 @@ putObjectInInventory objectName = M.insert (T.toLower objectName)
 getObject :: Monad m => World -> EntityId GameObject -> ExceptT GameError m GameObject
 getObject w objectId =
   fetch (ObjectDoesNotExist objectId) objectId $ _worldObjects w
+
+modifyObject
+  :: Monad m
+  => World
+  -> EntityId GameObject
+  -> (GameObject -> GameObject)
+  -> ExceptT GameError m World
+modifyObject w@(World _ objects _ _ _ _ _) objectId f =
+  pure $ w { _worldObjects = M.adjust f objectId objects }
+
+getExitId :: Monad m => World -> Text -> ExceptT GameError m (EntityId Exit)
+getExitId w exitName =
+  let exits = _worldExits w
+  in liftEither $ note SpaceWizard $ findInMap (\e -> _exitName e == exitName) exits
+
+modifyExit
+  :: Monad m
+  => World
+  -> EntityId Exit
+  -> (Exit -> Exit)
+  -> ExceptT GameError m World
+modifyExit w@(World _ _ exits _ _ _ _) exitId f =
+  pure $ w { _worldExits = M.adjust f exitId exits }
 
 -- TODO (james): Might replace this with accessors into some kind of player state record
 getPlayerInventory :: GameState -> [GameObject]
@@ -379,7 +394,7 @@ frontDoorOutside = Exit
   "It looks like it hasn't been opened in a long time."
   (EntityId 0)
   (EntityId 6)
-  (Just . ExitLock [EntityId 1] "You find it won't budge..." $ "You knock in the door with the shovel!")
+  (Just $ Lock [EntityId 1] "You find it won't budge..." "You knock in the door with the shovel!" Locked)
 
 frontDoorInside :: Exit
 frontDoorInside = Exit
@@ -520,24 +535,32 @@ handleWalk world args = do
       exitName   = keyArg args
       messages   = _worldLogMessages world
 
-  exit <- exitCurrentRoom world exitName
+  (exitId, exit) <- exitCurrentRoom world exitName
   _ <- maybeThrow (RoomDoesNotExist (_exitFrom exit)) $
     M.lookup (_exitFrom exit) rooms
   _ <- maybeThrow (RoomDoesNotExist (_exitTo exit)) $
     M.lookup (_exitTo exit) rooms
   case _exitLock exit of
     Nothing -> movePlayer exit playerRoom world
-    Just (ExitLock exitKeyItems errText successText)
-      | playerHasKeyItems (M.elems . _playerInventory $ world) exitKeyItems ->
+    Just (Lock keyItems errText successText Locked)
+      | playerHasKeyItems (M.elems . _playerInventory $ world) keyItems -> do
         let world' = world { _worldLogMessages = successText : messages }
-        in movePlayer exit playerRoom world'
+        world'' <- unlockDoor world' exitId
+        movePlayer exit playerRoom world''
       | otherwise -> pure $ world { _worldLogMessages = errText : messages }
+    Just (Lock _ _ _ Unlocked) -> movePlayer exit playerRoom world
   where
     movePlayer :: Monad m => Exit -> EntityId Room -> World -> ExceptT GameError m World
     movePlayer ext rm wrld
       | _exitFrom ext == rm = pure $ wrld { _playerRoom = _exitTo ext }
       | otherwise           = throwError SpaceWizard
-    playerHasKeyItems :: [EntityId GameObject] -> [EntityId Item] -> Bool
+    unlockDoor :: Monad m => World -> EntityId Exit -> ExceptT GameError m World
+    unlockDoor w eid = modifyExit w eid unlockExit
+    unlockExit :: Exit -> Exit
+    unlockExit exit@(Exit _ _ _ _ (Just lck)) =
+      exit { _exitLock = Just lck { _lockState = Unlocked } }
+    unlockExit exit = exit
+    playerHasKeyItems :: [EntityId GameObject] -> [EntityId GameObject] -> Bool
     playerHasKeyItems playerInventory exitKeyItems =
       let exitEntityIds = map getEntityId exitKeyItems
       in exitEntityIds `intersect` map getEntityId playerInventory == exitEntityIds
@@ -575,7 +598,7 @@ handleLook w args =
     Just args' -> lookInContainer w . keyArg $ args'
     Nothing -> do
       let exitName = keyArg args
-      exit <- exitCurrentRoom w exitName
+      (_, exit) <- exitCurrentRoom w exitName
       pure $ w { _worldLogMessages = _worldLogMessages w <> [_exitDescription exit] }
 
 lookInContainer :: Monad m => World -> Text -> ExceptT GameError m World

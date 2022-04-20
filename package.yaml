@@ -35,6 +35,7 @@ library:
   - containers
   - data-default
   - directory
+  - errors
   - filepath
   - haskeline
   - lens
