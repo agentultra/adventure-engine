@@ -37,6 +37,7 @@ import System.Directory
 import System.FilePath
 
 import Adventure.Data.Map.Util
+import Adventure.Engine.Rewards
 import Adventure.List.Utils
 
 newtype EntityId a = EntityId { getEntityId :: Int }
@@ -308,14 +309,16 @@ data GameState
   , _gameStateScenes      :: [Scene]
   , _gameStateInputBuffer :: Text
   , _gameStateGameErrors  :: [Text]
+  , _gameStateEventLog    :: [Event]
   }
   deriving (Eq, Show)
 
 instance JSON.ToJSON GameState where
-  toJSON (GameState world scenes _ _) =
+  toJSON (GameState world scenes _ _ eventLog) =
     JSON.object
     [ "world" .= world
     , "scenes" .= scenes
+    , "events" .= eventLog
     ]
 
 instance JSON.FromJSON GameState where
@@ -325,6 +328,7 @@ instance JSON.FromJSON GameState where
     <*> v .: "scenes"
     <*> pure mempty
     <*> pure mempty
+    <*> v .: "events"
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
   deriving newtype
@@ -463,6 +467,7 @@ defaultGameState
   defaultWorld
   []
   ""
+  []
   []
 
 initialGameState :: Either GameError GameState
@@ -866,7 +871,7 @@ makeFields ''GameState
 makeFields ''World
 
 updateGame :: GameState -> GameState
-updateGame g@(GameState w rvs input errors) =
+updateGame g@(GameState w rvs input errors _) =
   case runExcept $ handle' g w input of
     Left err -> updateGameErrors g err
     Right world' ->
@@ -878,7 +883,7 @@ updateGame g@(GameState w rvs input errors) =
             & inputBuffer .~ ""
   where
     updateGameErrors :: GameState -> GameError -> GameState
-    updateGameErrors (GameState _ _ _ errs) e
+    updateGameErrors (GameState _ _ _ errs _) e
       | length errs < 3 = g & gameErrors .~ gameErrorText e : errs
       | otherwise = g & gameErrors .~ prepend (gameErrorText e) errs
 
