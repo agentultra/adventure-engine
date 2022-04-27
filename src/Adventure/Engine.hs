@@ -11,7 +11,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE LambdaCase #-}
 
-module Adventure.Engine where
+module Adventure.Engine
+  ( module Adventure.Engine
+  , module Adventure.Engine.Objects
+  )
+where
 
 import Control.Exception
 import Control.Error (note)
@@ -37,142 +41,16 @@ import System.Directory
 import System.FilePath
 
 import Adventure.Data.Map.Util
+import Adventure.Engine.Database
+import Adventure.Engine.Language
+import Adventure.Engine.Objects
 import Adventure.Engine.Rewards
 import Adventure.List.Utils
-
-newtype EntityId a = EntityId { getEntityId :: Int }
-  deriving (Eq, Generic, Ord, Show)
-
-deriving anyclass instance JSON.ToJSON (EntityId Room)
-deriving anyclass instance JSON.ToJSONKey (EntityId Room)
-deriving anyclass instance JSON.ToJSON (EntityId Exit)
-deriving anyclass instance JSON.ToJSONKey (EntityId Exit)
-deriving anyclass instance JSON.ToJSON (EntityId GameObject)
-deriving anyclass instance JSON.ToJSONKey (EntityId GameObject)
-deriving anyclass instance JSON.ToJSON (EntityId Item)
-
-deriving anyclass instance JSON.FromJSON (EntityId Room)
-deriving anyclass instance JSON.FromJSONKey (EntityId Room)
-deriving anyclass instance JSON.FromJSON (EntityId Exit)
-deriving anyclass instance JSON.FromJSONKey (EntityId Exit)
-deriving anyclass instance JSON.FromJSON (EntityId GameObject)
-deriving anyclass instance JSON.FromJSONKey (EntityId GameObject)
-deriving anyclass instance JSON.FromJSON (EntityId Item)
-
-data Room
-  = Room
-  { _roomName        :: Text
-  , _roomDescription :: Text
-  , _roomObjects     :: Map Text (EntityId GameObject)
-  , _roomExits       :: Map Text (EntityId Exit)
-  , _roomDig         :: Either Text [(Text, Maybe (EntityId GameObject))]
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON Room
-deriving instance JSON.FromJSON Room
-
-data Item
-  = Item
-  { _itemSize'   :: Int
-  , _itemWeight' :: Int
-  , _itemVerbs   :: [(Verb, Verb)]
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON Item
-deriving instance JSON.FromJSON Item
-
-item :: Int -> Int -> [(Verb, Verb)] -> Object
-item size weight = ObjectItem . Item size weight
-
-data ContainerLock
-  = ContainerLock
-  { _containerLockLock                :: Lock
-  , _containerLockUnlockedDescription :: Text
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON ContainerLock
-deriving instance JSON.FromJSON ContainerLock
-
-data Container
-  = Container
-  { _containerSize  :: Int
-  , _containerItems :: Map ItemName (EntityId GameObject)
-  , _containerLock  :: Maybe ContainerLock
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON Container
-deriving instance JSON.FromJSON Container
-
-container :: Int -> Map ItemName (EntityId GameObject) -> Maybe ContainerLock -> Object
-container size containerItems containerLock = ObjectContainer $ Container size containerItems containerLock
-
-data Object
-  = ObjectItem Item
-  | ObjectContainer Container
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON Object
-deriving instance JSON.FromJSON Object
-
-data GameObject
-  = GameObject
-  { _gameObjectName        :: Text
-  , _gameObjectDescription :: Text
-  , _gameObjectObject      :: Object
-  }
-  deriving (Eq, Generic, Show)
-
-describeGameObject :: GameObject -> Text
-describeGameObject (GameObject _ desc (ObjectContainer (Container _ _ (Just (ContainerLock (Lock _ _ _ Locked) _))))) = desc
-describeGameObject (GameObject _ _ (ObjectContainer (Container _ _ (Just (ContainerLock (Lock _ _ _ Unlocked) unlockedDesc))))) = unlockedDesc
-describeGameObject (GameObject _ desc _) = desc
-
-deriving instance JSON.ToJSON GameObject
-deriving instance JSON.FromJSON GameObject
-
-itemObject :: GameObject -> Maybe Item
-itemObject (GameObject _ _ (ObjectItem item')) = pure item'
-itemObject _                 = Nothing
 
 itemObjectVerbAliasMap :: GameObject -> Maybe (Map Verb Verb)
 itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item'))
   = pure . M.fromList . _itemVerbs $ item'
 itemObjectVerbAliasMap _ = Nothing
-
-data LockState = Locked | Unlocked
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON LockState
-deriving instance JSON.FromJSON LockState
-
-data Lock
-  = Lock
-  { _lockKeyItems   :: [EntityId GameObject]
-  , _lockFailMsg    :: Text
-  , _lockSuccessMsg :: Text
-  , _lockState      :: LockState
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON Lock
-deriving instance JSON.FromJSON Lock
-
-data Exit
-  = Exit
-  { _exitName        :: Text
-  , _exitDescription :: Text
-  , _exitFrom        :: EntityId Room
-  , _exitTo          :: EntityId Room
-  , _exitLock        :: Maybe Lock
-  }
-  deriving (Eq, Generic, Show)
-
-deriving instance JSON.ToJSON Exit
-deriving instance JSON.FromJSON Exit
 
 data Scene
   = Scene
@@ -330,6 +208,10 @@ instance JSON.FromJSON GameState where
     <*> pure mempty
     <*> v .: "events"
 
+emitEvent :: (Monad m, MonadState GameState m) => Event -> ExceptT GameError m ()
+emitEvent event =
+  lift $ modify (\g@(GameState _ _ _ _ eventLog) -> g { _gameStateEventLog = eventLog ++ [event]})
+
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
   deriving newtype
     ( Applicative
@@ -427,8 +309,6 @@ defaultWorld = World
 
 -- Managing the World
 
-type ItemName = Text
-
 type VerbAliasMap = Map Verb Verb
 
 defaultVerbAliasMap :: VerbAliasMap
@@ -475,8 +355,9 @@ initialGameState = do
   initialScene <- runExcept $ render defaultWorld
   pure $ defaultGameState { _gameStateScenes = [initialScene] }
 
-handle' :: Monad m => GameState -> World -> Text -> ExceptT GameError m World
-handle' _ world input = do
+handle' :: (Monad m, MonadState GameState m) => ExceptT GameError m World
+handle' = do
+  (GameState world _ input _ _) <- lift get
   (v, args) <- parse input
   verb <- getVerb (_playerVerbs world) v
   handleVerb verb world args
@@ -521,7 +402,7 @@ gameErrorText = \case
   SaveFileError txt          -> "Error saving file: " <> txt
   SpaceWizard                -> "SPACE WIZARD!!!!"
 
-handleVerb :: Monad m => Verb -> World -> [Text] -> ExceptT GameError m World
+handleVerb :: (Monad m, MonadState GameState m) => Verb -> World -> [Text] -> ExceptT GameError m World
 handleVerb (Verb "walk") w args = handleWalk w args
 handleVerb (Verb "pickup") w args = handlePickup w args
 handleVerb (Verb "drop") w args = handleDrop w args
@@ -570,7 +451,7 @@ handleWalk world args = do
       let exitEntityIds = map getEntityId exitKeyItems
       in exitEntityIds `intersect` map getEntityId playerInventory == exitEntityIds
 
-handlePickup :: Monad m => World -> [Text] -> ExceptT GameError m World
+handlePickup :: (Monad m, MonadState GameState m) => World -> [Text] -> ExceptT GameError m World
 handlePickup _ [] = throwError $ MissingParameter "pickup what?"
 handlePickup world args = do
   let objectName = keyArg args
@@ -586,6 +467,7 @@ handlePickup world args = do
     M.lookup objectId objects
   -- TODO (james): add support for container verbiage
   itemVerbs <- maybeThrow SpaceWizard . itemObjectVerbAliasMap $ object
+  emitEvent (ItemPickedUp objectId)
   pure $ world
     { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
     , _playerInventory = putObjectInInventory objectName objectId playerInv
@@ -819,14 +701,6 @@ render w@(World _ _ exits _ playerInv _ messages) = do
         Nothing   -> throwError $ ExitDoesNotExist exitId
         Just exit -> pure exit
 
-newtype Verb = Verb { unVerb :: Text }
-  deriving (Eq, Generic, Ord, Show)
-
-deriving anyclass instance JSON.ToJSON Verb
-deriving anyclass instance JSON.ToJSONKey Verb
-deriving anyclass instance JSON.FromJSON Verb
-deriving anyclass instance JSON.FromJSONKey Verb
-
 -- Utilities
 
 -- | if the first word matches the head of the list return the rest of
@@ -871,10 +745,10 @@ makeFields ''GameState
 makeFields ''World
 
 updateGame :: GameState -> GameState
-updateGame g@(GameState w rvs input errors _) =
-  case runExcept $ handle' g w input of
-    Left err -> updateGameErrors g err
-    Right world' ->
+updateGame gameState =
+  case runIdentity . (`runStateT` gameState) . runExceptT $ handle' of
+    (Left err, g) -> updateGameErrors g err
+    (Right world', g@(GameState _ rvs _ _ _)) ->
       case runExcept $ render world' of
         Left renderErr -> updateGameErrors g renderErr
         Right rendered ->
@@ -883,7 +757,7 @@ updateGame g@(GameState w rvs input errors _) =
             & inputBuffer .~ ""
   where
     updateGameErrors :: GameState -> GameError -> GameState
-    updateGameErrors (GameState _ _ _ errs _) e
+    updateGameErrors g@(GameState _ _ _ errs _) e
       | length errs < 3 = g & gameErrors .~ gameErrorText e : errs
       | otherwise = g & gameErrors .~ prepend (gameErrorText e) errs
 

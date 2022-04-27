@@ -8,6 +8,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Writer.Strict
 
 import Adventure.Engine
+import Adventure.Engine.Database
 import Adventure.Engine.Rewards
 
 main :: IO ()
@@ -27,6 +28,6 @@ main = hspec $ do
   fdescribe "score" $ do
     context "given some duplicate event in the event log" $
       it "should count only the first event" $ do
-        let events = [ItemPickedUp 5, ItemPickedUp 5, ItemDropped]
-            rewards = [EventReward (ItemPickedUp 5) 100]
+        let events = [ItemPickedUp (EntityId 5), ItemPickedUp (EntityId 5), ItemDropped]
+            rewards = [EventReward (ItemPickedUp (EntityId 5)) 100]
         score events rewards `shouldBe` 100

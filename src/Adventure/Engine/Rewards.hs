@@ -10,8 +10,11 @@ import Data.Set (Set)
 import qualified Data.Set as S
 import GHC.Generics
 
+import Adventure.Engine.Database
+import Adventure.Engine.Objects
+
 data Event
-  = ItemPickedUp Int
+  = ItemPickedUp (EntityId GameObject)
   | ItemDropped
   deriving (Eq, Generic, Ord, Show)
 
