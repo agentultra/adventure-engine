@@ -142,6 +142,18 @@ getObjectInInventory w objectName =
 getInventoryObjects :: Monad m => World -> ExceptT GameError m [GameObject]
 getInventoryObjects w = traverse (getObject w) $ M.elems (_playerInventory w)
 
+getObjectByName
+  :: ( MonadState GameState m, Monad m)
+  => Text
+  -> ExceptT GameError m (EntityId GameObject, GameObject)
+getObjectByName objectName = do
+  (GameState world _ _ _ _) <- lift get
+  objectId <- maybeThrow (ObjectNotInInventory objectName) $
+    M.lookup objectName (_playerInventory world)
+  object <- maybeThrow (ObjectNotInInventory objectName) $
+    M.lookup objectId (_worldObjects world)
+  pure (objectId, object)
+
 putObjectInInventory
   :: Text
   -> EntityId GameObject
@@ -564,10 +576,7 @@ handleDrop args = do
       rooms       = _worldRooms world
       objectName  = keyArg args
 
-  objectId <- maybeThrow (ObjectNotInInventory objectName) $
-    M.lookup objectName (_playerInventory world)
-  object <- maybeThrow (ObjectNotInInventory objectName) $
-    M.lookup objectId (_worldObjects world)
+  (objectId, object) <- getObjectByName objectName
 
   let objectVerbs = fromMaybe M.empty . itemObjectVerbAliasMap $ object
 
