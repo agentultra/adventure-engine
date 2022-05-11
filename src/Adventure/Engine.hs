@@ -133,7 +133,7 @@ updateCurrentRoom update = do
   let roomMap = _worldRooms w
   lift $ put g
     { _gameStateWorld = w
-      { _worldRooms = M.update (\room -> Just $ update room) (_worldPlayerRoom w ) roomMap
+      { _worldRooms = M.update (Just . update) (_worldPlayerRoom w ) roomMap
       }
     }
 
