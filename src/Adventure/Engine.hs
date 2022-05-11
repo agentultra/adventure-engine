@@ -124,12 +124,18 @@ getObjectInCurrentRoom w objectName = do
   room <- currentRoom w
   fetch (ObjectNotInRoom objectName) objectName $ _roomObjects room
 
-updateCurrentRoom :: Monad m => World -> Room -> ExceptT GameError m World
-updateCurrentRoom w room =
+updateCurrentRoom
+  :: ( Monad m, MonadState GameState m )
+  => (Room -> Room)
+  -> ExceptT GameError m ()
+updateCurrentRoom update = do
+  g@(GameState w _ _ _ _ _) <- lift get
   let roomMap = _worldRooms w
-  in pure $ w
-     { _worldRooms = M.update (const . Just $ room) (_worldPlayerRoom w) roomMap
-     }
+  lift $ put g
+    { _gameStateWorld = w
+      { _worldRooms = M.update (\room -> Just $ update room) (_worldPlayerRoom w ) roomMap
+      }
+    }
 
 getObjectInInventory
   :: Monad m
@@ -194,6 +200,20 @@ getPlayerInventory gameState =
   case runExcept $ getInventoryObjects $ _gameStateWorld gameState of
     Left err -> error $ "Error getting inventory: " ++ show err
     Right objects -> objects
+
+putInInventory
+  :: ( Monad m, MonadState GameState m )
+  => Text
+  -> EntityId GameObject
+  -> ExceptT GameError m ()
+putInInventory objectName objectId = do
+  g@(GameState world _ _ _ _ _) <- lift get
+  let playerInv = _playerInventory world
+  lift . put $ g
+    { _gameStateWorld = world
+      { _playerInventory = putObjectInInventory objectName objectId playerInv
+      }
+    }
 
 addPlayerMessage
   :: ( MonadState GameState m, Monad m )
@@ -673,10 +693,8 @@ handleDig
   => [Text]
   -> ExceptT GameError m ()
 handleDig _ = do
-  g@(GameState world _ _ _ _ _) <- lift get
-  let msgs = _worldPlayerMessages world
-      playerInv = _playerInventory world
-      roomId = _worldPlayerRoom world
+  (GameState world _ _ _ _ _) <- lift get
+  let roomId = _worldPlayerRoom world
   room <- currentRoom world
   case _roomDig room of
     Left failMsg -> addPlayerMessage failMsg
@@ -684,21 +702,15 @@ handleDig _ = do
       addPlayerMessage "You dig but nothing seems to come of it..."
       emitEvent $ Dug roomId Nothing
     Right ((successMsg, mItem):rest) -> do
-      let room' = room { _roomDig = rest <$ _roomDig room }
-      world'' <- updateCurrentRoom world room'
+      updateCurrentRoom $ \r -> r { _roomDig = rest <$ _roomDig r }
       case mItem of
         Nothing -> do
           addPlayerMessage successMsg
-          let world''' = world'' { _worldPlayerMessages = msgs <> [successMsg] }
-          lift . put $ g { _gameStateWorld = world''' }
           emitEvent $ Dug roomId Nothing
         Just itemId -> do
           object <- getObject world itemId
-          let world''' = world''
-                { _playerInventory = putObjectInInventory (_gameObjectName object) itemId playerInv
-                , _worldPlayerMessages = msgs <> [successMsg]
-                }
-          lift . put $ g { _gameStateWorld = world''' }
+          putInInventory (_gameObjectName object) itemId
+          addPlayerMessage successMsg
           emitEvent $ Dug roomId (Just itemId)
 
 data Command = Unlock deriving (Eq, Show)
