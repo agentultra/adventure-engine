@@ -15,6 +15,7 @@ import Data.Maybe
 import Data.Text (Text)
 import qualified Data.Text as T
 import Adventure.Engine
+import Adventure.Engine.Rewards
 import Adventure.GUI.Widgets.Keystroke
 import Adventure.List.Utils
 import System.FilePath
@@ -43,7 +44,7 @@ buildUI env model = widgetTree
     gameViewArea
       = hstack
       [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
-      , renderInventory $ getPlayerInventory model
+      , vstack $ renderScore ++ (renderInventory $ getPlayerInventory model)
       ]
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
@@ -53,6 +54,7 @@ buildUI env model = widgetTree
       , textField_ inputBuffer [onChange AppInputUpdated]
       , scroll_ [] renderedErrorLabels `styleBasic` [height 28, padding 5]
       ] `styleBasic` [padding 10]
+    renderScore = [ label_ ("Score: " <> (T.pack $ show (score (model ^. eventLog) (model ^. rewards)))) [] ]
 
 renderedScene :: Scene -> WidgetNode GameState AppEvent
 renderedScene (Scene roomName roomDescription objects exits msgs) =
@@ -71,9 +73,9 @@ renderedScene (Scene roomName roomDescription objects exits msgs) =
               ] `styleBasic` [paddingL 10, paddingR 10]
      ]
 
-renderInventory :: [GameObject] -> WidgetNode GameState AppEvent
+renderInventory :: [GameObject] -> [WidgetNode GameState AppEvent]
 renderInventory objs =
-  vstack $ [ label_ "You are holding: " [] ] ++ map renderInventoryObject objs
+  [ label_ "You are holding: " [] ] ++ map renderInventoryObject objs
   where
     renderInventoryObject obj = label_ (_gameObjectName obj) []
 

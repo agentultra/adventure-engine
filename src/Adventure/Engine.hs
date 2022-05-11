@@ -375,7 +375,9 @@ defaultGameState
   ""
   []
   []
-  []
+  [ EventReward (ItemPickedUp (EntityId 1)) 10
+  , EventReward (Dug (EntityId 0) (Just $ EntityId 9)) 3
+  ]
 
 initialGameState :: Either GameError GameState
 initialGameState = do
