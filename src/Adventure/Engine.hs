@@ -47,6 +47,8 @@ import Adventure.Engine.Objects
 import Adventure.Engine.Rewards
 import Adventure.List.Utils
 
+import Debug.Trace
+
 itemObjectVerbAliasMap :: GameObject -> Maybe (Map Verb Verb)
 itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item'))
   = pure . M.fromList . _itemVerbs $ item'
@@ -471,6 +473,7 @@ handleWalk args = do
           g@(GameState w _ _ _ _) <- lift get
           let w' = w { _worldPlayerRoom = _exitTo ext }
           lift . put $ g { _gameStateWorld = w' }
+          emitEvent $ PlayerMoved (_exitFrom ext) (_exitTo ext)
       | otherwise           = throwError SpaceWizard
     unlockDoor
       :: (MonadState GameState m, Monad m)
@@ -509,13 +512,13 @@ handlePickup args = do
     M.lookup objectId objects
   -- TODO (james): add support for container verbiage
   itemVerbs <- maybeThrow SpaceWizard . itemObjectVerbAliasMap $ object
-  emitEvent (ItemPickedUp objectId)
   let w' = world
            { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
            , _playerInventory = putObjectInInventory objectName objectId playerInv
            , _playerVerbs = M.union (_playerVerbs world) itemVerbs
            }
   lift . put $ g { _gameStateWorld = w' }
+  emitEvent (ItemPickedUp objectId)
   where
     removeItem objectName r = r
       { _roomObjects = M.update (const Nothing) objectName (_roomObjects r)
@@ -531,8 +534,9 @@ handleLook args =
     Just args' -> lookInContainer . keyArg $ args'
     Nothing -> do
       let exitName = keyArg args
-      (_, exit) <- exitCurrentRoom exitName
+      (exitId, exit) <- exitCurrentRoom exitName
       addWorldLogMessage . _exitDescription $ exit
+      emitEvent $ PlayerLookedAtExit exitId
 
 lookInContainer
   :: ( MonadState GameState m, Monad m )
@@ -545,23 +549,25 @@ lookInContainer containerName = do
     ObjectItem _ -> throwError $ InvalidObjectParameter containerName
     ObjectContainer cont ->
       case _containerLock cont of
-        Nothing -> doLookInContainer cont
+        Nothing -> doLookInContainer containerId cont
         Just (ContainerLock lck _) ->
           case _lockState lck of
             Locked ->
               let lockMsg = _lockFailMsg lck
               in addWorldLogMessage lockMsg
-            Unlocked -> doLookInContainer cont
+            Unlocked -> doLookInContainer containerId cont
   where
     doLookInContainer
       :: ( MonadState GameState m, Monad m)
-      => Container
+      => (EntityId GameObject)
+      -> Container
       -> ExceptT GameError m ()
-    doLookInContainer cont = do
+    doLookInContainer contId cont = do
       (GameState w _ _ _ _) <- lift get
       items <- traverse (getObject w) $ M.elems (_containerItems cont)
       let itemNames = T.intercalate ", " . map _gameObjectName $ items
       addWorldLogMessage $ "Inside the " <> containerName <> " you see: " <> itemNames
+      emitEvent $ PlayerLookedInContainer contId
 
 handleDrop
   :: ( MonadState GameState m, Monad m )
@@ -586,6 +592,7 @@ handleDrop args = do
         , _playerVerbs = M.difference playerVerbs objectVerbs
         }
   lift . put $ g { _gameStateWorld = w' }
+  emitEvent $ ItemDropped objectId
   where
     addObject objectName objectId r
       = r { _roomObjects = M.insert objectName objectId (_roomObjects r) }
@@ -613,6 +620,7 @@ examineInInventory objectName = do
   object <- getObject world objectId
 
   addWorldLogMessage . _gameObjectDescription $ object
+  emitEvent $ ItemExamined objectId
 
 examineInRoom
   :: ( MonadState GameState m, Monad m )
@@ -624,6 +632,7 @@ examineInRoom objectName = do
   object   <- getObject world objectId
 
   addWorldLogMessage . describeGameObject $ object
+  emitEvent $ ItemExamined objectId
 
 handleTake
   :: ( MonadState GameState m, Monad m )
@@ -653,6 +662,7 @@ handleTake args = do
                 , _playerInventory = putObjectInInventory itemName itemId playerInv
                 }
           lift . put $ g { _gameStateWorld = w' }
+          emitEvent $ ItemTakenFromContainer itemId objectId
 
 handleDig
   :: ( MonadState GameState m, Monad m )
@@ -662,19 +672,22 @@ handleDig _ = do
   g@(GameState world _ _ _ _) <- lift get
   let msgs = _worldLogMessages world
       playerInv = _playerInventory world
+      roomId = _worldPlayerRoom world
   room <- currentRoom world
   case _roomDig room of
     Left failMsg -> addWorldLogMessage failMsg
-    Right [] ->
+    Right [] -> do
       let world' = world { _worldLogMessages = msgs <> ["You dig but nothing seems to come of it..."] }
-      in lift . put $ g { _gameStateWorld = world' }
+      lift . put $ g { _gameStateWorld = world' }
+      emitEvent $ Dug roomId Nothing
     Right ((successMsg, mItem):rest) -> do
       let room' = room { _roomDig = rest <$ _roomDig room }
       world'' <- updateCurrentRoom world room'
       case mItem of
-        Nothing ->
+        Nothing -> do
           let world''' = world'' { _worldLogMessages = msgs <> [successMsg] }
-          in lift . put $ g { _gameStateWorld = world''' }
+          lift . put $ g { _gameStateWorld = world''' }
+          emitEvent $ Dug roomId Nothing
         Just itemId -> do
           object <- getObject world itemId
           let world''' = world''
@@ -682,6 +695,7 @@ handleDig _ = do
                 , _worldLogMessages = msgs <> [successMsg]
                 }
           lift . put $ g { _gameStateWorld = world''' }
+          emitEvent $ Dug roomId (Just itemId)
 
 data Command = Unlock deriving (Eq, Show)
 
@@ -721,14 +735,16 @@ evalObjectInteraction (ObjectInteraction subjectId predicateId command) = do
         ObjectContainer c ->
           case _containerLock c of
             Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
-            Just (ContainerLock lck _) | subjectId `elem` _lockKeyItems lck ->
+            Just (ContainerLock lck _) | subjectId `elem` _lockKeyItems lck -> do
                        let world' = world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world)
                                           , _worldLogMessages = _lockSuccessMsg lck : _worldLogMessages world
                                           }
-                       in lift . put $ g { _gameStateWorld = world' }
-            Just (ContainerLock lck _) ->
+                       lift . put $ g { _gameStateWorld = world' }
+                       emitEvent $ ContainerUnlocked predicateId subjectId
+            Just (ContainerLock lck _) -> do
               let unlockError = _lockFailMsg lck
-              in addWorldLogMessage unlockError
+              addWorldLogMessage unlockError
+              emitEvent $ ContainerUnlockFailed predicateId subjectId
     doObjectCommand _ _ _ = throwError $ InvalidCommand ""
 
     unlock :: Lock -> GameObject -> GameObject
@@ -838,7 +854,8 @@ updateGame gameState =
       case runExcept $ render world' of
         Left renderErr -> updateGameErrors g renderErr
         Right rendered ->
-          g & scenes .~ rendered : rvs
+          trace ("Event Log: " ++ show (g ^. eventLog)) $
+            g & scenes .~ rendered : rvs
             & world .~ world' { _worldLogMessages = [] }
             & inputBuffer .~ ""
   where

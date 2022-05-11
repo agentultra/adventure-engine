@@ -15,7 +15,19 @@ import Adventure.Engine.Objects
 
 data Event
   = ItemPickedUp (EntityId GameObject)
-  | ItemDropped
+  | ItemDropped (EntityId GameObject)
+  | ItemExamined (EntityId GameObject)
+  | ItemTakenFromContainer (EntityId GameObject) (EntityId GameObject)
+  -- ^ Player took ITEM from CONTAINER
+  | PlayerMoved (EntityId Room) (EntityId Room)
+  -- ^ Player moved FROM room TO room
+  | PlayerLookedInContainer (EntityId GameObject)
+  | PlayerLookedAtExit (EntityId Exit)
+  | Dug (EntityId Room) (Maybe (EntityId GameObject))
+  | ContainerUnlocked (EntityId GameObject) (EntityId GameObject)
+  -- ^ Player attempted to unlock CONTAINER with ITEM
+  | ContainerUnlockFailed (EntityId GameObject) (EntityId GameObject)
+  -- ^ Player attempted to unlock CONTAINER with ITEM
   deriving (Eq, Generic, Ord, Show)
 
 deriving instance ToJSON Event
