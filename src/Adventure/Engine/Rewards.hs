@@ -40,6 +40,9 @@ data EventReward
   }
   deriving (Eq, Generic, Show)
 
+deriving instance ToJSON EventReward
+deriving instance FromJSON EventReward
+
 data Reward
   = Awarded EventReward
   | NoAward
