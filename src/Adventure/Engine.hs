@@ -73,7 +73,7 @@ data World
   , _worldPlayerRoom  :: EntityId Room
   , _playerInventory  :: Map Text (EntityId GameObject)
   , _playerVerbs      :: VerbAliasMap
-  , _worldLogMessages :: [Text]
+  , _worldPlayerMessages :: [Text]
   }
   deriving (Eq, Show)
 
@@ -201,7 +201,7 @@ addWorldLogMessage
   -> ExceptT GameError m ()
 addWorldLogMessage msg = do
   g@(GameState w _ _ _ _ _) <- lift get
-  lift . put $ g { _gameStateWorld = w { _worldLogMessages = msg : _worldLogMessages w } }
+  lift . put $ g { _gameStateWorld = w { _worldPlayerMessages = msg : _worldPlayerMessages w } }
 
 -- TODO (james): a better way to show errors
 data GameState
@@ -674,14 +674,14 @@ handleDig
   -> ExceptT GameError m ()
 handleDig _ = do
   g@(GameState world _ _ _ _ _) <- lift get
-  let msgs = _worldLogMessages world
+  let msgs = _worldPlayerMessages world
       playerInv = _playerInventory world
       roomId = _worldPlayerRoom world
   room <- currentRoom world
   case _roomDig room of
     Left failMsg -> addWorldLogMessage failMsg
     Right [] -> do
-      let world' = world { _worldLogMessages = msgs <> ["You dig but nothing seems to come of it..."] }
+      let world' = world { _worldPlayerMessages = msgs <> ["You dig but nothing seems to come of it..."] }
       lift . put $ g { _gameStateWorld = world' }
       emitEvent $ Dug roomId Nothing
     Right ((successMsg, mItem):rest) -> do
@@ -689,14 +689,14 @@ handleDig _ = do
       world'' <- updateCurrentRoom world room'
       case mItem of
         Nothing -> do
-          let world''' = world'' { _worldLogMessages = msgs <> [successMsg] }
+          let world''' = world'' { _worldPlayerMessages = msgs <> [successMsg] }
           lift . put $ g { _gameStateWorld = world''' }
           emitEvent $ Dug roomId Nothing
         Just itemId -> do
           object <- getObject world itemId
           let world''' = world''
                 { _playerInventory = putObjectInInventory (_gameObjectName object) itemId playerInv
-                , _worldLogMessages = msgs <> [successMsg]
+                , _worldPlayerMessages = msgs <> [successMsg]
                 }
           lift . put $ g { _gameStateWorld = world''' }
           emitEvent $ Dug roomId (Just itemId)
@@ -741,7 +741,7 @@ evalObjectInteraction (ObjectInteraction subjectId predicateId command) = do
             Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
             Just (ContainerLock lck _) | subjectId `elem` _lockKeyItems lck -> do
                        let world' = world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world)
-                                          , _worldLogMessages = _lockSuccessMsg lck : _worldLogMessages world
+                                          , _worldPlayerMessages = _lockSuccessMsg lck : _worldPlayerMessages world
                                           }
                        lift . put $ g { _gameStateWorld = world' }
                        emitEvent $ ContainerUnlocked predicateId subjectId
@@ -859,7 +859,7 @@ updateGame gameState =
         Left renderErr -> updateGameErrors g renderErr
         Right rendered ->
           g & scenes .~ rendered : rvs
-            & world .~ world' { _worldLogMessages = [] }
+            & world .~ world' { _worldPlayerMessages = [] }
             & inputBuffer .~ ""
   where
     updateGameErrors :: GameState -> GameError -> GameState
