@@ -36,7 +36,10 @@ buildUI
   :: WidgetEnv GameState AppEvent
   -> GameState
   -> WidgetNode GameState AppEvent
-buildUI env model = widgetTree
+buildUI env model =
+  if _gameStateIsGameEnd model
+  then hstack [ label_ "YOU WON" [] ]
+  else widgetTree
   where
     bottomMarker = spacer `nodeKey` "bottomMarker"
     renderedSceneLabels = intersperse spacer $ map renderedScene $ model ^. scenes

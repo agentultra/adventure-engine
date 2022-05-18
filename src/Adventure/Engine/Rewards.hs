@@ -6,8 +6,10 @@ module Adventure.Engine.Rewards where
 
 import Data.Aeson
 import Data.List
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Set (Set)
 import qualified Data.Set as S
+import Data.Text (Text)
 import GHC.Generics
 
 import Adventure.Engine.Database
@@ -35,8 +37,8 @@ deriving instance FromJSON Event
 
 data EventReward
   = EventReward
-  { _eventRewardEvent  :: Event
-  , _eventRewardAmount :: Int
+  { _eventRewardEvent   :: Event
+  , _eventRewardAmount  :: Int
   }
   deriving (Eq, Generic, Show)
 
@@ -72,3 +74,21 @@ score events eventRewards = go (mempty, 0) events eventRewards
 
     add :: (Set Event, Int) -> (Set Event, Int) -> (Set Event, Int)
     add (levts, lamt) (revts, ramt) = (levts <> revts, lamt + ramt)
+
+data GameEndReward
+  = GameEndReward
+  { gameEndEvent :: Event
+  , gameEndText  :: Text
+  }
+  deriving (Eq, Generic, Show)
+
+deriving instance ToJSON GameEndReward
+deriving instance FromJSON GameEndReward
+
+gameEnd :: Event -> NonEmpty GameEndReward -> Maybe Text
+gameEnd event (endEvent :| rest)
+  | event == gameEndEvent endEvent = Just . gameEndText $ endEvent
+  | otherwise = find (checkGameEnd event) rest >>= Just . gameEndText
+  where
+    checkGameEnd :: Event -> GameEndReward -> Bool
+    checkGameEnd ev (GameEndReward rewardEvent _) = ev == rewardEvent
