@@ -23,7 +23,7 @@ import Control.Lens hiding ((.=))
 import Control.Monad.Except
 import Control.Monad.State.Strict
 import Control.Monad.Writer.Strict
-import Data.Aeson ((.=), (.:))
+import Data.Aeson ((.=), (.:), decodeFileStrict')
 import qualified Data.Aeson as JSON
 import qualified Data.ByteString.Lazy as LBS
 import Data.Char
@@ -286,92 +286,6 @@ newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT Gam
     , MonadError GameError
     )
 
-frontPorch :: Room
-frontPorch = Room
-  "The Front Porch"
-  "There's a faded white picket fence in the yard and an old swing next to you."
-  (M.fromList [("shovel", EntityId 1), ("purse", EntityId 2), ("fire", EntityId 10)])
-  (M.fromList [("front door", EntityId 3)])
-  (Right [ ( "You get a little hot digging but find something..."
-           , Just $ EntityId 9
-           )
-         ]
-  )
-
-mainHall :: Room
-mainHall = Room
-  "Main Hall"
-  "The main hall of the house is plastered in yellowing wall paper."
-  (M.fromList [("brolly bucket", EntityId 8)])
-  (M.fromList [("door", EntityId 5)])
-  (Left "You can't do that here...")
-
-shovel :: GameObject
-shovel = GameObject "Shovel" "A rusted shovel with a wooden handle."
-  $ item 2 4 [(Verb "dig", Verb "dig")]
-
-purse :: GameObject
-purse = GameObject "Purse" "Weathered, old, leather purse." $ item 1 1 []
-
-magicBrolly :: GameObject
-magicBrolly
-  = GameObject "Brolly" "A plain, black brolly. The head of a dragon is carved into the wooden handle."
-  $ item 1 1 []
-
-bucket :: GameObject
-bucket
-  = GameObject "Brolly Bucket" "A rusting, iron bucket. There may be some brollies in it."
-  $ container 4 (M.fromList [("brolly", EntityId 7)]) Nothing
-
-coin :: GameObject
-coin
- = GameObject "A Wierd Coin" "A coin with a face that is hard to discern."
-  $ item 1 1 []
-
-fireLock :: Lock
-fireLock = Lock
-  [EntityId 1] -- the shovel
-  "It doesn't work. It hurts your eyes to get too close but there is something dark in there, if only you could put out the flames."
-  "Success! You have put the fire out..."
-  Locked
-
-fire :: GameObject
-fire = GameObject "A Roaring Fire" "A roaring fire fed by some unknown source of fuel. If you look closely there is some object in the flames."
-  $ container 4 M.empty (Just (ContainerLock fireLock "A doused, empty fire pit."))
-
-frontDoorOutside :: Exit
-frontDoorOutside = Exit
-  "Front Door"
-  "It looks like it hasn't been opened in a long time."
-  (EntityId 0)
-  (EntityId 6)
-  (Just $ Lock [EntityId 1] "You find it won't budge..." "You knock in the door with the shovel!" Locked)
-
-frontDoorInside :: Exit
-frontDoorInside = Exit
-  "Door"
-  "You came through here."
-  (EntityId 6)
-  (EntityId 0)
-  Nothing
-
-defaultWorld :: World
-defaultWorld = World
-  (M.fromList [(EntityId 0, frontPorch), (EntityId 6, mainHall)])
-  (M.fromList
-   [ (EntityId 1, shovel)
-   , (EntityId 2, purse)
-   , (EntityId 7, magicBrolly)
-   , (EntityId 8, bucket)
-   , (EntityId 9, coin)
-   , (EntityId 10, fire)
-   ])
-  (M.fromList [(EntityId 3, frontDoorOutside), (EntityId 5, frontDoorInside)])
-  (EntityId 0)
-  M.empty
-  defaultVerbAliasMap
-  mempty
-
 -- Managing the World
 
 type VerbAliasMap = Map Verb Verb
@@ -406,10 +320,10 @@ parse = parseCmd . T.words
     parseCmd [] = throwError MissingCommand
     parseCmd (x:xs) = pure (Verb x, xs)
 
-defaultGameState :: GameState
-defaultGameState
-  = GameState
-  defaultWorld
+defaultGameState :: World -> GameState
+defaultGameState world =
+  GameState
+  world
   []
   ""
   []
@@ -421,10 +335,10 @@ defaultGameState
   (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "YOU WON" "WOOHOO"])
   Nothing
 
-initialGameState :: Either GameError GameState
-initialGameState = do
-  initialScene <- runExcept $ render defaultWorld
-  pure $ defaultGameState { _gameStateScenes = [initialScene] }
+initialGameState :: World -> Either GameError GameState
+initialGameState world = do
+  initialScene <- runExcept $ render world
+  pure $ (defaultGameState world) { _gameStateScenes = [initialScene] }
 
 checkGameEnd
   :: ( Monad m, MonadState GameState m )
@@ -967,6 +881,15 @@ loadGameState fileName = do
   case JSON.eitherDecode' . LBS.fromStrict . T.encodeUtf8 $ rawContents of
     Left decodeError -> throwError . SaveLoadError . T.pack $ decodeError
     Right gameState -> pure gameState
+
+loadWorld :: IO World
+loadWorld = do
+  w <- decodeFileStrict' $ "data" </> "world.json"
+  case w of
+    Nothing ->
+      -- TODO (james): add better error experience for user
+      error "Cannot read world.json"
+    Just world' -> pure world'
 
 ensureDirectories :: IO ()
 ensureDirectories = do

@@ -175,6 +175,7 @@ doGameLoad fname = do
 start :: IO ()
 start = do
   ensureDirectories
-  case initialGameState of
+  world <- loadWorld
+  case initialGameState world of
     Left err -> throw err
     Right initialState -> startApp initialState handleEvent buildUI config
