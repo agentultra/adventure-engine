@@ -416,6 +416,7 @@ defaultGameState
   []
   [ EventReward (ItemPickedUp (EntityId 1) (EntityId 0)) 10
   , EventReward (Dug (EntityId 0) (Just $ EntityId 9)) 3
+  , EventReward (DoorUnlocked (EntityId 3)) 4
   ]
   (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "YOU WON" "WOOHOO"])
   Nothing
@@ -515,6 +516,7 @@ handleWalk args = do
       | playerHasKeyItems (M.elems . _playerInventory $ world) keyItems -> do
         addPlayerMessage successText
         unlockDoor exitId
+        emitEvent $ DoorUnlocked exitId
         movePlayer exit playerRoom
       | otherwise -> addPlayerMessage errText
     Just (Lock _ _ _ Unlocked) -> movePlayer exit playerRoom

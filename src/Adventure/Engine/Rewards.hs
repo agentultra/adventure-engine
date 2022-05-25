@@ -30,6 +30,7 @@ data Event
   -- ^ Player attempted to unlock CONTAINER with ITEM
   | ContainerUnlockFailed (EntityId GameObject) (EntityId GameObject)
   -- ^ Player attempted to unlock CONTAINER with ITEM
+  | DoorUnlocked (EntityId Exit)
   deriving (Eq, Generic, Ord, Show)
 
 deriving instance ToJSON Event
