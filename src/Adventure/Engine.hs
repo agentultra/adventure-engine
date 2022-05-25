@@ -328,17 +328,18 @@ defaultGameState world =
   ""
   []
   []
-  [ EventReward (ItemPickedUp (EntityId 1) (EntityId 0)) 10
-  , EventReward (Dug (EntityId 0) (Just $ EntityId 9)) 3
-  , EventReward (DoorUnlocked (EntityId 3)) 4
-  ]
+  []
   (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "YOU WON" "WOOHOO"])
   Nothing
 
-initialGameState :: World -> Either GameError GameState
-initialGameState world = do
+initialGameState :: World -> [EventReward] -> Either GameError GameState
+initialGameState world eventRewards = do
   initialScene <- runExcept $ render world
-  pure $ (defaultGameState world) { _gameStateScenes = [initialScene] }
+  pure
+    $ (defaultGameState world)
+    { _gameStateScenes = [initialScene]
+    , _gameStateRewards = eventRewards
+    }
 
 checkGameEnd
   :: ( Monad m, MonadState GameState m )
@@ -890,6 +891,17 @@ loadWorld = do
       -- TODO (james): add better error experience for user
       error "Cannot read world.json"
     Just world' -> pure world'
+
+-- | Load the 'EventReward' defined by the author for initializing the
+-- game engine state.
+loadEventRewards :: (MonadIO m, Monad m) => m [EventReward]
+loadEventRewards = do
+  maybeRewards <- liftIO . decodeFileStrict' $ "data" </> "event_rewards.json"
+  case maybeRewards of
+    Nothing ->
+      -- TODO (james): add better error experience for user
+      error "Cannot read event_rewards.json"
+    Just eventRewards -> pure eventRewards
 
 ensureDirectories :: IO ()
 ensureDirectories = do

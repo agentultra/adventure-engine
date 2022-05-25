@@ -1,0 +1,1 @@
+[{"_eventRewardEvent":{"tag":"ItemPickedUp","contents":[{"getEntityId":1},{"getEntityId":0}]},"_eventRewardAmount":10},{"_eventRewardEvent":{"tag":"Dug","contents":[{"getEntityId":0},{"getEntityId":9}]},"_eventRewardAmount":3},{"_eventRewardEvent":{"tag":"DoorUnlocked","contents":{"getEntityId":3}},"_eventRewardAmount":4}]

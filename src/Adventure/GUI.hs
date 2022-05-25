@@ -176,6 +176,7 @@ start :: IO ()
 start = do
   ensureDirectories
   world <- loadWorld
-  case initialGameState world of
+  eventRewards <- loadEventRewards
+  case initialGameState world eventRewards of
     Left err -> throw err
     Right initialState -> startApp initialState handleEvent buildUI config
