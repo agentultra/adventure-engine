@@ -28,6 +28,7 @@ data AppEvent
   | AppShowLastMsg
   | AppGameSaved SaveFileResult
   | AppGameLoaded LoadFileResult
+  | AppQuit
   deriving (Eq, Show)
 
 -- UI
@@ -39,7 +40,12 @@ buildUI
 buildUI env model =
   case _gameStateIsGameEnd model of
     Nothing -> widgetTree
-    Just (GameEndReward _ title _) -> hstack [ label_ title [] ]
+    Just (GameEndReward _ title gameEndText) ->
+      keystroke [("Enter", AppQuit)] $
+      vstack [ label_ title [] `styleBasic` [textCenter]
+             , separatorLine `styleBasic` [padding 10]
+             , label_ gameEndText [] `styleBasic` [textCenter]
+             ]
   where
     bottomMarker = spacer `nodeKey` "bottomMarker"
     renderedSceneLabels = intersperse spacer $ map renderedScene $ model ^. scenes
@@ -111,6 +117,7 @@ handleEvent env node model event =
       case result of
         FileNotLoaded msg -> [ Model $ model & gameErrors .~ msg : model ^. gameErrors ]
         FileLoaded fname gamestate -> [ Model $ gamestate & gameErrors .~ ["Loaded: " <> fname] ]
+    AppQuit -> [ exitApplication ]
 
 scrollToNode :: WidgetEnv GameState AppEvent
   -> WidgetNode GameState AppEvent
