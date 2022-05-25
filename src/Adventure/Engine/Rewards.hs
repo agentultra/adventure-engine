@@ -16,7 +16,7 @@ import Adventure.Engine.Database
 import Adventure.Engine.Objects
 
 data Event
-  = ItemPickedUp (EntityId GameObject)
+  = ItemPickedUp (EntityId GameObject) (EntityId Room)
   | ItemDropped (EntityId GameObject) (EntityId Room)
   | ItemExamined (EntityId GameObject)
   | ItemTakenFromContainer (EntityId GameObject) (EntityId GameObject)

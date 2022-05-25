@@ -414,7 +414,7 @@ defaultGameState
   ""
   []
   []
-  [ EventReward (ItemPickedUp (EntityId 1)) 10
+  [ EventReward (ItemPickedUp (EntityId 1) (EntityId 0)) 10
   , EventReward (Dug (EntityId 0) (Just $ EntityId 9)) 3
   ]
   (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "YOU WON" "WOOHOO"])
@@ -573,7 +573,7 @@ handlePickup args = do
            , _playerVerbs = M.union (_playerVerbs world) itemVerbs
            }
   lift . put $ g { _gameStateWorld = w' }
-  emitEvent (ItemPickedUp objectId)
+  emitEvent (ItemPickedUp objectId playerRoom)
   where
     removeItem objectName r = r
       { _roomObjects = M.update (const Nothing) objectName (_roomObjects r)
