@@ -17,7 +17,7 @@ import Adventure.Engine.Objects
 
 data Event
   = ItemPickedUp (EntityId GameObject)
-  | ItemDropped (EntityId GameObject)
+  | ItemDropped (EntityId GameObject) (EntityId Room)
   | ItemExamined (EntityId GameObject)
   | ItemTakenFromContainer (EntityId GameObject) (EntityId GameObject)
   -- ^ Player took ITEM from CONTAINER

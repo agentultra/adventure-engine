@@ -647,7 +647,7 @@ handleDrop args = do
         , _playerVerbs = M.difference playerVerbs objectVerbs
         }
   lift . put $ g { _gameStateWorld = w' }
-  emitEvent $ ItemDropped objectId
+  emitEvent $ ItemDropped objectId playerPos
   where
     addObject objectName objectId r
       = r { _roomObjects = M.insert objectName objectId (_roomObjects r) }
