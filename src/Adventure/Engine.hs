@@ -227,11 +227,11 @@ addPlayerMessage msg = do
 
 setGameEnd
   :: ( Monad m, MonadState GameState m )
-  => Text
+  => GameEndReward
   -> ExceptT GameError m ()
-setGameEnd _ = do
+setGameEnd gameEndReward = do
   g <- lift get
-  lift . put $ g { _gameStateIsGameEnd = True }
+  lift . put $ g { _gameStateIsGameEnd = Just gameEndReward }
 
 -- TODO (james): a better way to show errors
 data GameState
@@ -243,7 +243,7 @@ data GameState
   , _gameStateEventLog       :: [Event]
   , _gameStateRewards        :: [EventReward]
   , _gameStateGameEndRewards :: NonEmpty GameEndReward
-  , _gameStateIsGameEnd      :: Bool
+  , _gameStateIsGameEnd      :: Maybe GameEndReward
   }
   deriving (Eq, Show)
 
@@ -417,8 +417,8 @@ defaultGameState
   [ EventReward (ItemPickedUp (EntityId 1)) 10
   , EventReward (Dug (EntityId 0) (Just $ EntityId 9)) 3
   ]
-  (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "WOOHOO"])
-  False
+  (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "YOU WON" "WOOHOO"])
+  Nothing
 
 initialGameState :: Either GameError GameState
 initialGameState = do

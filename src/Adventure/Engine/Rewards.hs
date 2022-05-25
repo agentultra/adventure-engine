@@ -78,6 +78,7 @@ score events eventRewards = go (mempty, 0) events eventRewards
 data GameEndReward
   = GameEndReward
   { gameEndEvent :: Event
+  , gameEndTitle :: Text
   , gameEndText  :: Text
   }
   deriving (Eq, Generic, Show)
@@ -85,10 +86,10 @@ data GameEndReward
 deriving instance ToJSON GameEndReward
 deriving instance FromJSON GameEndReward
 
-gameEnd :: Event -> NonEmpty GameEndReward -> Maybe Text
+gameEnd :: Event -> NonEmpty GameEndReward -> Maybe GameEndReward
 gameEnd event (endEvent :| rest)
-  | event == gameEndEvent endEvent = Just . gameEndText $ endEvent
-  | otherwise = find (checkGameEnd event) rest >>= Just . gameEndText
+  | event == gameEndEvent endEvent = Just endEvent
+  | otherwise = find (checkGameEnd event) rest
   where
     checkGameEnd :: Event -> GameEndReward -> Bool
-    checkGameEnd ev (GameEndReward rewardEvent _) = ev == rewardEvent
+    checkGameEnd ev (GameEndReward rewardEvent _ _) = ev == rewardEvent
