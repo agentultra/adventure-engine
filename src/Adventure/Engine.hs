@@ -17,13 +17,14 @@ module Adventure.Engine
   )
 where
 
+import Codec.Archive.Zip
 import Control.Exception
 import Control.Error (note)
 import Control.Lens hiding ((.=))
 import Control.Monad.Except
 import Control.Monad.State.Strict
 import Control.Monad.Writer.Strict
-import Data.Aeson ((.=), (.:), decodeFileStrict')
+import Data.Aeson ((.=), (.:))
 import qualified Data.Aeson as JSON
 import qualified Data.ByteString.Lazy as LBS
 import Data.Char
@@ -803,6 +804,10 @@ maybeThrow :: Monad m => b -> Maybe a -> ExceptT b m a
 maybeThrow _ (Just x) = pure x
 maybeThrow y Nothing  = throwError y
 
+maybeError :: String -> Maybe a -> a
+maybeError _ (Just x)  = x
+maybeError err Nothing = error err
+
 eitherToInput :: MonadError e (InputT m) => Either e a -> InputT m a
 eitherToInput (Left err)     = throwError err
 eitherToInput (Right result) = pure result
@@ -883,43 +888,27 @@ loadGameState fileName = do
     Left decodeError -> throwError . SaveLoadError . T.pack $ decodeError
     Right gameState -> pure gameState
 
-loadWorld :: IO World
-loadWorld = do
-  w <- decodeFileStrict' $ "data" </> "world.json"
-  case w of
-    Nothing ->
-      -- TODO (james): add better error experience for user
-      error "Cannot read world.json"
-    Just world' -> pure world'
-
--- | Load the 'EventReward' defined by the author for initializing the
--- game engine state.
-loadEventRewards :: (MonadIO m, Monad m) => m [EventReward]
-loadEventRewards = do
-  maybeRewards <- liftIO . decodeFileStrict' $ "data" </> "event_rewards.json"
-  case maybeRewards of
-    Nothing ->
-      -- TODO (james): add better error experience for user
-      error "Cannot read event_rewards.json"
-    Just eventRewards -> pure eventRewards
-
-loadGameEndRewards :: (MonadIO m, Monad m) => m (NonEmpty GameEndReward)
-loadGameEndRewards = do
-  maybeRewards <- liftIO . decodeFileStrict' $ "data" </> "game_end_rewards.json"
-  case maybeRewards of
-    Nothing ->
-      -- TODO (james): add better error experience for user
-      error "Cannot read game_end_rewards.json"
-    Just gameEndRewards' -> pure gameEndRewards'
-
 loadGameData :: IO GameState
-loadGameData = do
-  world' <- loadWorld
-  eventRewards <- loadEventRewards
-  gameEndRewards' <- loadGameEndRewards
-  case initialGameState world' eventRewards gameEndRewards' of
-    Left err -> throw err
-    Right initialState -> pure initialState
+loadGameData =
+  withArchive ("data" </> "game.zip") $ do
+    worldRaw <- getEntry =<< mkEntrySelector "world.json"
+    eventRewardsRaw <- getEntry =<< mkEntrySelector "event_rewards.json"
+    gameEndRewardsRaw <- getEntry =<< mkEntrySelector "game_end_rewards.json"
+    let world'
+          = maybeError "Could not read world.json from game.zip"
+          . JSON.decodeStrict'
+          $ worldRaw
+        eventRewards
+          = maybeError "Could not read event_rewards.json from game.zip"
+          . JSON.decodeStrict'
+          $ eventRewardsRaw
+        gameEndRewards'
+          = maybeError "Could not read game_end_rewards.json from game.zip"
+          . JSON.decodeStrict'
+          $ gameEndRewardsRaw
+    case initialGameState world' eventRewards gameEndRewards' of
+      Left err -> throw err
+      Right initialState -> pure initialState
 
 ensureDirectories :: IO ()
 ensureDirectories = do

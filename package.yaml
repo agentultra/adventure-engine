@@ -42,6 +42,7 @@ library:
   - monomer
   - mtl
   - text
+  - zip
 
 executables:
   adventure-engine-exe:
