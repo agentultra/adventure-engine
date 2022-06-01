@@ -320,8 +320,8 @@ parse = parseCmd . T.words
     parseCmd [] = throwError MissingCommand
     parseCmd (x:xs) = pure (Verb x, xs)
 
-defaultGameState :: World -> GameState
-defaultGameState world =
+defaultGameState :: World -> NonEmpty GameEndReward -> GameState
+defaultGameState world gameEndRewards =
   GameState
   world
   []
@@ -329,14 +329,14 @@ defaultGameState world =
   []
   []
   []
-  (NE.fromList [GameEndReward (Dug (EntityId 0) (Just $ EntityId 9)) "YOU WON" "WOOHOO"])
+  gameEndRewards
   Nothing
 
-initialGameState :: World -> [EventReward] -> Either GameError GameState
-initialGameState world eventRewards = do
+initialGameState :: World -> [EventReward] -> NonEmpty GameEndReward -> Either GameError GameState
+initialGameState world eventRewards gameEndRewards = do
   initialScene <- runExcept $ render world
   pure
-    $ (defaultGameState world)
+    $ (defaultGameState world gameEndRewards)
     { _gameStateScenes = [initialScene]
     , _gameStateRewards = eventRewards
     }
@@ -903,14 +903,23 @@ loadEventRewards = do
       error "Cannot read event_rewards.json"
     Just eventRewards -> pure eventRewards
 
+loadGameEndRewards :: (MonadIO m, Monad m) => m (NonEmpty GameEndReward)
+loadGameEndRewards = do
+  maybeRewards <- liftIO . decodeFileStrict' $ "data" </> "game_end_rewards.json"
+  case maybeRewards of
+    Nothing ->
+      -- TODO (james): add better error experience for user
+      error "Cannot read game_end_rewards.json"
+    Just gameEndRewards' -> pure gameEndRewards'
+
 loadGameData :: IO GameState
 loadGameData = do
   world' <- loadWorld
   eventRewards <- loadEventRewards
-  case initialGameState world' eventRewards of
+  gameEndRewards' <- loadGameEndRewards
+  case initialGameState world' eventRewards gameEndRewards' of
     Left err -> throw err
     Right initialState -> pure initialState
-
 
 ensureDirectories :: IO ()
 ensureDirectories = do
