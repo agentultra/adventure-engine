@@ -903,6 +903,15 @@ loadEventRewards = do
       error "Cannot read event_rewards.json"
     Just eventRewards -> pure eventRewards
 
+loadGameData :: IO GameState
+loadGameData = do
+  world' <- loadWorld
+  eventRewards <- loadEventRewards
+  case initialGameState world' eventRewards of
+    Left err -> throw err
+    Right initialState -> pure initialState
+
+
 ensureDirectories :: IO ()
 ensureDirectories = do
   userHomeRoot <- getHomeDirectory

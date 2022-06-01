@@ -175,8 +175,5 @@ doGameLoad fname = do
 start :: IO ()
 start = do
   ensureDirectories
-  world <- loadWorld
-  eventRewards <- loadEventRewards
-  case initialGameState world eventRewards of
-    Left err -> throw err
-    Right initialState -> startApp initialState handleEvent buildUI config
+  initState <- loadGameData
+  startApp initState handleEvent buildUI config
