@@ -17,6 +17,7 @@ import qualified Data.Text as T
 import Adventure.Engine
 import Adventure.Engine.Rewards
 import Adventure.GUI.Widgets.Keystroke
+import Adventure.GUI.Widgets.Background
 import Adventure.List.Utils
 import System.FilePath
 import System.Directory
@@ -50,11 +51,14 @@ buildUI env model =
     bottomMarker = spacer `nodeKey` "bottomMarker"
     renderedSceneLabels = intersperse spacer $ map renderedScene $ model ^. scenes
     renderedViewStack = vstack . reverse $ bottomMarker : renderedSceneLabels
-    gameViewArea
-      = hstack
-      [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
-      , vstack $ renderScore ++ (renderInventory $ getPlayerInventory model)
-      ]
+    viewAreaWidgets = [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
+                      , vstack $ renderScore ++ (renderInventory $ getPlayerInventory model)
+                      ]
+    gameViewArea = case model ^. currentBackground of
+      Nothing -> hstack viewAreaWidgets
+      Just currentBg -> hstack $ [renderBackground currentBg] -- : viewAreaWidgets
+    renderBackground (BackgroundImage name (w, h) imgData) =
+      background $ BackgroundConfig name (Size w h) imgData
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map label $ model ^. gameErrors
