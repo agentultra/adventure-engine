@@ -434,7 +434,9 @@ handleWalk args = do
         unlockDoor exitId
         emitEvent $ DoorUnlocked exitId
         movePlayer exit playerRoom
-      | otherwise -> addPlayerMessage errText
+      | otherwise -> do
+          addPlayerMessage errText
+          emitEvent $ PlayerMoveFailed playerRoom exitId
     Just (Lock _ _ _ Unlocked) -> movePlayer exit playerRoom
   where
     movePlayer :: (MonadState GameState m, Monad m)
@@ -501,7 +503,9 @@ handleLook
   :: ( MonadState GameState m, Monad m )
   => [Text]
   -> ExceptT GameError m ()
-handleLook [] = pure ()
+handleLook [] = do
+  gameState <- lift get
+  emitEvent $ PlayerLookedAtRoom (_worldPlayerRoom . _gameStateWorld $ gameState)
 handleLook args =
   case peek "in" args of
     Just args' -> lookInContainer . keyArg $ args'
@@ -525,9 +529,10 @@ lookInContainer containerName = do
         Nothing -> doLookInContainer containerId cont
         Just (ContainerLock lck _) ->
           case _lockState lck of
-            Locked ->
+            Locked -> do
               let lockMsg = _lockFailMsg lck
-              in addPlayerMessage lockMsg
+              addPlayerMessage lockMsg
+              emitEvent $ PlayerFailedToLookInContainer containerId
             Unlocked -> doLookInContainer containerId cont
   where
     doLookInContainer
