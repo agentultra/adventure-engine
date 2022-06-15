@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 8f1fe4228db7c604d1bc204e823459175448d80db2ca833426f6b63a713d111b
+-- hash: 05a9bafcd6b1ff7fc33ddc4b5858086c6db8ad37c642f89621ef01949f335a55
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -35,7 +35,6 @@ library
       Adventure.Engine.Objects
       Adventure.Engine.Rewards
       Adventure.GUI
-      Adventure.GUI.Widgets.Background
       Adventure.GUI.Widgets.Keystroke
       Adventure.List.Utils
   other-modules:
