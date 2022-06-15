@@ -503,7 +503,9 @@ handleLook
   :: ( MonadState GameState m, Monad m )
   => [Text]
   -> ExceptT GameError m ()
-handleLook [] = pure ()
+handleLook [] = do
+  gameState <- lift get
+  emitEvent $ PlayerLookedAtRoom (_worldPlayerRoom . _gameStateWorld $ gameState)
 handleLook args =
   case peek "in" args of
     Just args' -> lookInContainer . keyArg $ args'

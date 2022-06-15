@@ -26,6 +26,7 @@ data Event
   | PlayerMoveFailed (EntityId Room) (EntityId Exit)
   | PlayerLookedInContainer (EntityId GameObject)
   | PlayerLookedAtExit (EntityId Exit)
+  | PlayerLookedAtRoom (EntityId Room)
   | Dug (EntityId Room) (Maybe (EntityId GameObject))
   | ContainerUnlocked (EntityId GameObject) (EntityId GameObject)
   -- ^ Player attempted to unlock CONTAINER with ITEM
