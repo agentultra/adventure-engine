@@ -52,9 +52,10 @@ buildUI env model =
     renderedViewStack = vstack . reverse $ bottomMarker : renderedSceneLabels
     gameViewArea
       = hstack
-      [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels"
+      [ zstack $ renderBackground ++ [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels" ]
       , vstack $ renderScore ++ (renderInventory $ getPlayerInventory model)
       ]
+    renderBackground = maybeToList $ (\imgPath -> image_ "./test.bmp" []) <$> getCurrentBackground model
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map label $ model ^. gameErrors

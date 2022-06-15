@@ -22,6 +22,7 @@ data Room
   , _roomObjects     :: Map Text (EntityId GameObject)
   , _roomExits       :: Map Text (EntityId Exit)
   , _roomDig         :: Either Text [(Text, Maybe (EntityId GameObject))]
+  , _roomBackground  :: Maybe Text
   }
   deriving (Eq, Generic, Show)
 

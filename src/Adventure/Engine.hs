@@ -234,17 +234,25 @@ setGameEnd gameEndReward = do
   g <- lift get
   lift . put $ g { _gameStateIsGameEnd = Just gameEndReward }
 
+getCurrentBackground :: GameState -> Maybe Text
+getCurrentBackground gameState =
+  let world = _gameStateWorld gameState
+  in case M.lookup (_worldPlayerRoom world) (_worldRooms world) of
+    Nothing -> Nothing
+    Just r  -> _roomBackground r
+
 -- TODO (james): a better way to show errors
 data GameState
   = GameState
-  { _gameStateWorld          :: World
-  , _gameStateScenes         :: [Scene]
-  , _gameStateInputBuffer    :: Text
-  , _gameStateGameErrors     :: [Text]
-  , _gameStateEventLog       :: [Event]
-  , _gameStateRewards        :: [EventReward]
-  , _gameStateGameEndRewards :: NonEmpty GameEndReward
-  , _gameStateIsGameEnd      :: Maybe GameEndReward
+  { _gameStateWorld             :: World
+  , _gameStateScenes            :: [Scene]
+  , _gameStateInputBuffer       :: Text
+  , _gameStateGameErrors        :: [Text]
+  , _gameStateEventLog          :: [Event]
+  , _gameStateRewards           :: [EventReward]
+  , _gameStateGameEndRewards    :: NonEmpty GameEndReward
+  , _gameStateIsGameEnd         :: Maybe GameEndReward
+--  , _gameStateCurrentBackground :: Maybe FilePath
   }
   deriving (Eq, Show)
 
