@@ -529,9 +529,10 @@ lookInContainer containerName = do
         Nothing -> doLookInContainer containerId cont
         Just (ContainerLock lck _) ->
           case _lockState lck of
-            Locked ->
+            Locked -> do
               let lockMsg = _lockFailMsg lck
-              in addPlayerMessage lockMsg
+              addPlayerMessage lockMsg
+              emitEvent $ PlayerFailedToLookInContainer containerId
             Unlocked -> doLookInContainer containerId cont
   where
     doLookInContainer

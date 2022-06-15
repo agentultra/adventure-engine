@@ -25,6 +25,7 @@ data Event
   -- ^ Player moved FROM room TO room
   | PlayerMoveFailed (EntityId Room) (EntityId Exit)
   | PlayerLookedInContainer (EntityId GameObject)
+  | PlayerFailedToLookInContainer (EntityId GameObject)
   | PlayerLookedAtExit (EntityId Exit)
   | PlayerLookedAtRoom (EntityId Room)
   | Dug (EntityId Room) (Maybe (EntityId GameObject))
