@@ -434,7 +434,9 @@ handleWalk args = do
         unlockDoor exitId
         emitEvent $ DoorUnlocked exitId
         movePlayer exit playerRoom
-      | otherwise -> addPlayerMessage errText
+      | otherwise -> do
+          addPlayerMessage errText
+          emitEvent $ PlayerMoveFailed playerRoom exitId
     Just (Lock _ _ _ Unlocked) -> movePlayer exit playerRoom
   where
     movePlayer :: (MonadState GameState m, Monad m)

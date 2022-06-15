@@ -23,6 +23,7 @@ data Event
   -- ^ Player took ITEM from CONTAINER
   | PlayerMoved (EntityId Room) (EntityId Room)
   -- ^ Player moved FROM room TO room
+  | PlayerMoveFailed (EntityId Room) (EntityId Exit)
   | PlayerLookedInContainer (EntityId GameObject)
   | PlayerLookedAtExit (EntityId Exit)
   | Dug (EntityId Room) (Maybe (EntityId GameObject))
