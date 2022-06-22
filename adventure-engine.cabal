@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: fd32602bd6b7b03c312023049547da978a41bea29a2678fb12bd4a8fff2b79bf
+-- hash: 043f7fc00c1075a4643c2071f00daa5cecd6e4a225299f39e056ab694dbd8813
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -31,6 +31,7 @@ library
       Adventure.Data.Map.Util
       Adventure.Engine
       Adventure.Engine.Database
+      Adventure.Engine.ImageData
       Adventure.Engine.Language
       Adventure.Engine.Objects
       Adventure.Engine.Rewards
@@ -49,6 +50,7 @@ library
     , aeson
     , base >=4.7 && <5
     , bytestring
+    , bytestring-to-vector
     , containers
     , data-default
     , directory

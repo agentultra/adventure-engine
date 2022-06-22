@@ -16,6 +16,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import Adventure.Engine
 import Adventure.Engine.Rewards
+import qualified Adventure.Engine.ImageData as I
 import Adventure.GUI.Widgets.Keystroke
 import Adventure.List.Utils
 import System.FilePath
@@ -55,7 +56,14 @@ buildUI env model =
       [ zstack $ renderBackground ++ [ scroll_ [] renderedViewStack `nodeKey` "scrollLabels" ]
       , vstack $ renderScore ++ (renderInventory $ getPlayerInventory model)
       ]
-    renderBackground = maybeToList $ (\imgPath -> image_ "./test.bmp" []) <$> getCurrentBackground model
+    renderBackground
+      = maybeToList
+      $ imageFromImageData <$> getCurrentBackground model
+    imageFromImageData imgData
+      = imageMem_ ""
+        (imgData ^. I.raw)
+        (Size (fromIntegral $ imgData ^. I.width) (fromIntegral $ imgData ^. I.height))
+        []
     rowSepColor = gray & L.a .~ 0.5
     renderedGameError err = label_ (T.pack . show $ err) [multiline] `styleBasic` []
     renderedErrorLabels = vstack $ intersperse spacer $ map label $ model ^. gameErrors

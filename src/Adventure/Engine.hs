@@ -41,6 +41,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.IO as T
+import Data.Vector.Storable.ByteString (vectorToByteString)
 import GHC.Generics
 import System.Console.Haskeline
 import System.Directory
@@ -49,6 +50,7 @@ import System.FilePath
 import Adventure.Data.Map.Util
 import Adventure.Engine.Database
 import Adventure.Engine.Language
+import Adventure.Engine.ImageData
 import Adventure.Engine.Objects
 import Adventure.Engine.Rewards
 import Adventure.List.Utils
@@ -237,20 +239,14 @@ setGameEnd gameEndReward = do
   g <- lift get
   lift . put $ g { _gameStateIsGameEnd = Just gameEndReward }
 
-getCurrentBackground :: GameState -> Maybe Text
+getCurrentBackground :: GameState -> Maybe ImageData
 getCurrentBackground gameState =
   let world = _gameStateWorld gameState
   in case M.lookup (_worldPlayerRoom world) (_worldRooms world) of
     Nothing -> Nothing
-    Just r  -> _roomBackground r
-
-data ImageData
-  = ImageData
-  { _imageDataRaw    :: ByteString
-  , _imageDataWidth  :: Int
-  , _imageDataHeight :: Int
-  }
-  deriving (Eq, Show)
+    Just r  -> do
+      imgName <- _roomBackground r
+      M.lookup imgName $ _gameStateImageCache gameState
 
 -- TODO (james): a better way to show errors
 data GameState
@@ -930,8 +926,9 @@ loadGameData =
           let img = Pic.convertRGBA8 dimg
               imgW = Pic.imageWidth img
               imgH = Pic.imageHeight img
+              imgData = vectorToByteString . Pic.imageData $ img
           pure ( getEntryName entry
-               , ImageData { _imageDataRaw = imgRaw
+               , ImageData { _imageDataRaw = imgData
                            , _imageDataWidth = imgW
                            , _imageDataHeight = imgH
                            }
@@ -953,7 +950,7 @@ loadGameData =
       Right initialState -> pure initialState { _gameStateImageCache = M.fromList imgMap }
   where
     isImageEntry :: EntrySelector -> Bool
-    isImageEntry = equalFilePath "/images" . takeDirectory . unEntrySelector
+    isImageEntry = equalFilePath "images" . takeDirectory . unEntrySelector
 
 loadImage :: Text -> IO ImageData
 loadImage = undefined
