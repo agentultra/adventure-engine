@@ -38,6 +38,7 @@ library:
   - errors
   - filepath
   - haskeline
+  - JuicyPixels
   - lens
   - monomer
   - mtl

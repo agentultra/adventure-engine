@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 05a9bafcd6b1ff7fc33ddc4b5858086c6db8ad37c642f89621ef01949f335a55
+-- hash: fd32602bd6b7b03c312023049547da978a41bea29a2678fb12bd4a8fff2b79bf
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -45,7 +45,8 @@ library
       LambdaCase
       OverloadedStrings
   build-depends:
-      aeson
+      JuicyPixels
+    , aeson
     , base >=4.7 && <5
     , bytestring
     , containers
