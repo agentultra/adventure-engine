@@ -55,8 +55,6 @@ import Adventure.Engine.Objects
 import Adventure.Engine.Rewards
 import Adventure.List.Utils
 
-import Debug.Trace
-
 itemObjectVerbAliasMap :: GameObject -> Maybe (Map Verb Verb)
 itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item'))
   = pure . M.fromList . _itemVerbs $ item'
