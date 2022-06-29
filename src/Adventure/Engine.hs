@@ -920,19 +920,8 @@ loadGameData =
     entries <- getEntries
     imgMap <- forM (filter isImageEntry . M.keys $ entries) $ \entry -> do
       imgRaw <- getEntry entry
-      case Pic.decodeImage imgRaw of
-        Left err -> error $ "loadGameData: error loading image:" ++ show err
-        Right dimg -> do
-          let img = Pic.convertRGBA8 dimg
-              imgW = Pic.imageWidth img
-              imgH = Pic.imageHeight img
-              imgData = vectorToByteString . Pic.imageData $ img
-          pure ( getEntryName entry
-               , ImageData { _imageDataRaw = imgData
-                           , _imageDataWidth = imgW
-                           , _imageDataHeight = imgH
-                           }
-               )
+      let imgData = getImageData imgRaw
+      pure (getEntryName entry, imgData)
     let world'
           = maybeError "Could not read world.json from game.zip"
           . JSON.decodeStrict'
@@ -952,8 +941,19 @@ loadGameData =
     isImageEntry :: EntrySelector -> Bool
     isImageEntry = equalFilePath "images" . takeDirectory . unEntrySelector
 
-loadImage :: Text -> IO ImageData
-loadImage = undefined
+getImageData :: ByteString -> ImageData
+getImageData imgRaw =
+  case Pic.decodeImage imgRaw of
+    Left err -> error $ "loadGameData: error loading image:" ++ show err
+    Right dimg ->
+      let img = Pic.convertRGBA8 dimg
+          imgW = Pic.imageWidth img
+          imgH = Pic.imageHeight img
+          imgData = vectorToByteString . Pic.imageData $ img
+      in ImageData { _imageDataRaw = imgData
+                   , _imageDataWidth = imgW
+                   , _imageDataHeight = imgH
+                   }
 
 ensureDirectories :: IO ()
 ensureDirectories = do
