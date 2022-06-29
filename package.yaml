@@ -32,12 +32,14 @@ library:
   dependencies:
   - aeson
   - bytestring
+  - bytestring-to-vector
   - containers
   - data-default
   - directory
   - errors
   - filepath
   - haskeline
+  - JuicyPixels
   - lens
   - monomer
   - mtl
