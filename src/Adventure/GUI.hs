@@ -59,8 +59,8 @@ buildUI env model =
     renderBackground
       = maybeToList
       $ imageFromImageData <$> getCurrentBackground model
-    imageFromImageData imgData
-      = imageMem_ ""
+    imageFromImageData (imgName, imgData)
+      = imageMem_ imgName
         (imgData ^. I.raw)
         (Size (fromIntegral $ imgData ^. I.width) (fromIntegral $ imgData ^. I.height))
         []

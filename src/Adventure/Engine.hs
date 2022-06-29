@@ -55,6 +55,8 @@ import Adventure.Engine.Objects
 import Adventure.Engine.Rewards
 import Adventure.List.Utils
 
+import Debug.Trace
+
 itemObjectVerbAliasMap :: GameObject -> Maybe (Map Verb Verb)
 itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item'))
   = pure . M.fromList . _itemVerbs $ item'
@@ -239,14 +241,15 @@ setGameEnd gameEndReward = do
   g <- lift get
   lift . put $ g { _gameStateIsGameEnd = Just gameEndReward }
 
-getCurrentBackground :: GameState -> Maybe ImageData
+getCurrentBackground :: GameState -> Maybe (Text, ImageData)
 getCurrentBackground gameState =
   let world = _gameStateWorld gameState
   in case M.lookup (_worldPlayerRoom world) (_worldRooms world) of
     Nothing -> Nothing
     Just r  -> do
       imgName <- _roomBackground r
-      M.lookup imgName $ _gameStateImageCache gameState
+      imageData <- M.lookup imgName $ _gameStateImageCache gameState
+      pure (imgName, imageData)
 
 -- TODO (james): a better way to show errors
 data GameState
