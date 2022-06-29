@@ -107,6 +107,53 @@ instance JSON.FromJSON World where
     <*> v .: "playerVerbs"
     <*> pure mempty
 
+type VerbAliasMap = Map Verb Verb
+
+-- TODO (james): a better way to show errors
+data GameState
+  = GameState
+  { _gameStateWorld          :: World
+  , _gameStateScenes         :: [Scene]
+  , _gameStateInputBuffer    :: Text
+  , _gameStateGameErrors     :: [Text]
+  , _gameStateEventLog       :: [Event]
+  , _gameStateRewards        :: [EventReward]
+  , _gameStateGameEndRewards :: NonEmpty GameEndReward
+  , _gameStateIsGameEnd      :: Maybe GameEndReward
+  , _gameStateImageCache     :: Map Text ImageData
+--  , _gameStateCurrentBackground :: Maybe FilePath
+  }
+  deriving (Eq, Show)
+
+makeFields ''GameState
+
+instance JSON.ToJSON GameState where
+  toJSON gameState =
+    JSON.object
+    [ "world" .= (gameState ^. world)
+    , "scenes" .= (gameState ^. scenes)
+    , "events" .= (gameState ^. eventLog)
+    , "rewards" .= (gameState ^. rewards)
+    , "gameEndRewards" .= (gameState ^. gameEndRewards)
+    , "gameEnd" .= (gameState ^. isGameEnd)
+    ]
+
+instance JSON.FromJSON GameState where
+  parseJSON = JSON.withObject "GameState" $ \v -> do
+    gameStateGameEndRewards <- v .: "gameEndRewards"
+    if null gameStateGameEndRewards
+      then fail "Empty game end rewards detected when loading game state"
+      else GameState
+           <$> v .: "world"
+           <*> v .: "scenes"
+           <*> pure mempty
+           <*> pure mempty
+           <*> v .: "events"
+           <*> v .: "rewards"
+           <*> (pure . NE.fromList $ gameStateGameEndRewards)
+           <*> v .: "gameEnd"
+           <*> pure mempty
+
 fetch :: (Monad m, Ord k) => GameError -> k -> Map k v -> ExceptT GameError m v
 fetch e key db = maybe (throwError e) pure $ M.lookup key db
 
@@ -137,11 +184,12 @@ updateCurrentRoom
   => (Room -> Room)
   -> ExceptT GameError m ()
 updateCurrentRoom update = do
-  g@(GameState w _ _ _ _ _ _ _ _) <- lift get
-  let roomMap = _worldRooms w
-  lift $ put g
-    { _gameStateWorld = w
-      { _worldRooms = M.update (Just . update) (_worldPlayerRoom w ) roomMap
+  gameState <- lift get
+  let world'  = gameState ^. world
+      roomMap = _worldRooms world'
+  lift $ put gameState
+    { _gameStateWorld = world'
+      { _worldRooms = M.update (Just . update) (_worldPlayerRoom world') roomMap
       }
     }
 
@@ -161,11 +209,11 @@ getObjectByName
   => Text
   -> ExceptT GameError m (EntityId GameObject, GameObject)
 getObjectByName objectName = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
+  gameState <- lift get
   objectId <- maybeThrow (ObjectNotInInventory objectName) $
-    M.lookup objectName (_playerInventory world)
+    M.lookup objectName (_playerInventory $ gameState ^. world)
   object <- maybeThrow (ObjectNotInInventory objectName) $
-    M.lookup objectId (_worldObjects world)
+    M.lookup objectId (_worldObjects $ gameState ^. world)
   pure (objectId, object)
 
 putObjectInInventory
@@ -215,10 +263,10 @@ putInInventory
   -> EntityId GameObject
   -> ExceptT GameError m ()
 putInInventory objectName objectId = do
-  g@(GameState world _ _ _ _ _ _ _ _) <- lift get
-  let playerInv = _playerInventory world
-  lift . put $ g
-    { _gameStateWorld = world
+  gameState <- lift get
+  let playerInv = _playerInventory $ gameState ^. world
+  lift . put $ gameState
+    { _gameStateWorld = (gameState ^. world)
       { _playerInventory = putObjectInInventory objectName objectId playerInv
       }
     }
@@ -228,8 +276,10 @@ addPlayerMessage
   => Text
   -> ExceptT GameError m ()
 addPlayerMessage msg = do
-  g@(GameState w _ _ _ _ _ _ _ _) <- lift get
-  lift . put $ g { _gameStateWorld = w { _worldPlayerMessages = msg : _worldPlayerMessages w } }
+  gameState <- lift get
+  let world' = gameState ^. world
+  -- TODO (james): clean this up with `set`
+  lift . put $ gameState { _gameStateWorld = world' { _worldPlayerMessages = msg : _worldPlayerMessages world' } }
 
 setGameEnd
   :: ( Monad m, MonadState GameState m )
@@ -241,60 +291,20 @@ setGameEnd gameEndReward = do
 
 getCurrentBackground :: GameState -> Maybe (Text, ImageData)
 getCurrentBackground gameState =
-  let world = _gameStateWorld gameState
-  in case M.lookup (_worldPlayerRoom world) (_worldRooms world) of
+  let world' = gameState ^. world
+  in case M.lookup (_worldPlayerRoom world') (_worldRooms world') of
     Nothing -> Nothing
     Just r  -> do
       imgName <- _roomBackground r
       imageData <- M.lookup imgName $ _gameStateImageCache gameState
       pure (imgName, imageData)
 
--- TODO (james): a better way to show errors
-data GameState
-  = GameState
-  { _gameStateWorld          :: World
-  , _gameStateScenes         :: [Scene]
-  , _gameStateInputBuffer    :: Text
-  , _gameStateGameErrors     :: [Text]
-  , _gameStateEventLog       :: [Event]
-  , _gameStateRewards        :: [EventReward]
-  , _gameStateGameEndRewards :: NonEmpty GameEndReward
-  , _gameStateIsGameEnd      :: Maybe GameEndReward
-  , _gameStateImageCache     :: Map Text ImageData
---  , _gameStateCurrentBackground :: Maybe FilePath
-  }
-  deriving (Eq, Show)
-
-instance JSON.ToJSON GameState where
-  toJSON (GameState world scenes _ _ eventLog rewards gameEndRewards isGameEnd _) =
-    JSON.object
-    [ "world" .= world
-    , "scenes" .= scenes
-    , "events" .= eventLog
-    , "rewards" .= rewards
-    , "gameEndRewards" .= gameEndRewards
-    , "gameEnd" .= isGameEnd
-    ]
-
-instance JSON.FromJSON GameState where
-  parseJSON = JSON.withObject "GameState" $ \v -> do
-    gameEndRewards <- v .: "gameEndRewards"
-    if null gameEndRewards
-      then fail "Empty game end rewards detected when loading game state"
-      else GameState
-           <$> v .: "world"
-           <*> v .: "scenes"
-           <*> pure mempty
-           <*> pure mempty
-           <*> v .: "events"
-           <*> v .: "rewards"
-           <*> (pure . NE.fromList $ gameEndRewards)
-           <*> v .: "gameEnd"
-           <*> pure mempty
-
 emitEvent :: (Monad m, MonadState GameState m) => Event -> ExceptT GameError m ()
 emitEvent event =
-  lift $ modify (\g@(GameState _ _ _ _ eventLog _ _ _ _) -> g { _gameStateEventLog = eventLog ++ [event]})
+  lift
+  $ modify ( \gameState ->
+               gameState { _gameStateEventLog = (gameState ^. eventLog) ++ [event]}
+           )
 
 newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT GameState m) a }
   deriving newtype
@@ -306,8 +316,6 @@ newtype GameEngine m a = GameEngine { runEngine :: ExceptT GameError (StateT Gam
     )
 
 -- Managing the World
-
-type VerbAliasMap = Map Verb Verb
 
 defaultVerbAliasMap :: VerbAliasMap
 defaultVerbAliasMap
@@ -340,23 +348,23 @@ parse = parseCmd . T.words
     parseCmd (x:xs) = pure (Verb x, xs)
 
 defaultGameState :: World -> NonEmpty GameEndReward -> GameState
-defaultGameState world gameEndRewards =
+defaultGameState world' gameEndRewards' =
   GameState
-  world
+  world'
   []
   ""
   []
   []
   []
-  gameEndRewards
+  gameEndRewards'
   Nothing
   mempty
 
 initialGameState :: World -> [EventReward] -> NonEmpty GameEndReward -> Either GameError GameState
-initialGameState world eventRewards gameEndRewards = do
-  initialScene <- runExcept $ render world
+initialGameState world' eventRewards gameEndRewards' = do
+  initialScene <- runExcept $ render world'
   pure
-    $ (defaultGameState world gameEndRewards)
+    $ (defaultGameState world' gameEndRewards')
     { _gameStateScenes = [initialScene]
     , _gameStateRewards = eventRewards
     }
@@ -372,9 +380,9 @@ checkGameEnd = do
 
 handle' :: (Monad m, MonadState GameState m) => ExceptT GameError m ()
 handle' = do
-  (GameState world _ input _ _ _ _ _ _) <- lift get
-  (v, args) <- parse input
-  verb <- getVerb (_playerVerbs world) v
+  gameState <- lift get
+  (v, args) <- parse $ gameState ^. inputBuffer
+  verb <- getVerb (_playerVerbs $ gameState ^. world) v
   handleVerb verb args
   checkGameEnd
 
@@ -435,9 +443,10 @@ handleWalk
   -> ExceptT GameError m ()
 handleWalk [] = throwError $ MissingParameter "missing destination"
 handleWalk args = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
-  let rooms      = _worldRooms world
-      playerRoom = _worldPlayerRoom world
+  gameState <- lift get
+  let world'     = gameState ^. world
+      rooms      = _worldRooms world'
+      playerRoom = _worldPlayerRoom world'
       exitName   = keyArg args
 
   (exitId, exit) <- exitCurrentRoom exitName
@@ -448,7 +457,7 @@ handleWalk args = do
   case _exitLock exit of
     Nothing -> movePlayer exit playerRoom
     Just (Lock keyItems errText successText Locked)
-      | playerHasKeyItems (M.elems . _playerInventory $ world) keyItems -> do
+      | playerHasKeyItems (M.elems . _playerInventory $ world') keyItems -> do
         addPlayerMessage successText
         unlockDoor exitId
         emitEvent $ DoorUnlocked exitId
@@ -464,9 +473,9 @@ handleWalk args = do
       -> ExceptT GameError m ()
     movePlayer ext rm
       | _exitFrom ext == rm = do
-          g@(GameState w _ _ _ _ _ _ _ _) <- lift get
-          let w' = w { _worldPlayerRoom = _exitTo ext }
-          lift . put $ g { _gameStateWorld = w' }
+          gameState <- lift get
+          let w' = (gameState ^. world) { _worldPlayerRoom = _exitTo ext }
+          lift . put $ gameState { _gameStateWorld = w' }
           emitEvent $ PlayerMoved (_exitFrom ext) (_exitTo ext)
       | otherwise           = throwError SpaceWizard
     unlockDoor
@@ -492,26 +501,27 @@ handlePickup
   -> ExceptT GameError m ()
 handlePickup [] = throwError $ MissingParameter "pickup what?"
 handlePickup args = do
-  g@(GameState world _ _ _ _ _ _ _ _) <- lift get
+  gameState <- lift get
   let objectName = keyArg args
-      playerRoom = _worldPlayerRoom world
-      playerInv  = _playerInventory world
-      rooms      = _worldRooms world
-      objects    = _worldObjects world
+      world'     = gameState ^. world
+      playerRoom = _worldPlayerRoom world'
+      playerInv  = _playerInventory world'
+      rooms      = _worldRooms world'
+      objects    = _worldObjects world'
 
-  objectId <- getObjectInCurrentRoom world objectName
+  objectId <- getObjectInCurrentRoom world' objectName
   _ <- maybeThrow SpaceWizard $
     M.lookup playerRoom rooms
   object <- maybeThrow (ObjectDoesNotExist objectId) $
     M.lookup objectId objects
   -- TODO (james): add support for container verbiage
   itemVerbs <- maybeThrow SpaceWizard . itemObjectVerbAliasMap $ object
-  let w' = world
+  let w' = world'
            { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
            , _playerInventory = putObjectInInventory objectName objectId playerInv
-           , _playerVerbs = M.union (_playerVerbs world) itemVerbs
+           , _playerVerbs = M.union (_playerVerbs world') itemVerbs
            }
-  lift . put $ g { _gameStateWorld = w' }
+  lift . put $ gameState { _gameStateWorld = w' }
   emitEvent (ItemPickedUp objectId playerRoom)
   where
     removeItem objectName r = r
@@ -572,23 +582,24 @@ handleDrop
   -> ExceptT GameError m ()
 handleDrop [] = throwError $ MissingParameter "drop what?"
 handleDrop args = do
-  g@(GameState world _ _ _ _ _ _ _ _) <- lift get
-  let playerPos   = _worldPlayerRoom world
-      playerInv   = _playerInventory world
-      playerVerbs = _playerVerbs world
-      rooms       = _worldRooms world
+  gameState <- lift get
+  let world'      = gameState ^. world
+      playerPos   = _worldPlayerRoom world'
+      playerInv   = _playerInventory world'
+      playerVerbs = _playerVerbs world'
+      rooms       = _worldRooms world'
       objectName  = keyArg args
 
   (objectId, object) <- getObjectByName objectName
 
   let objectVerbs = fromMaybe M.empty . itemObjectVerbAliasMap $ object
 
-  let w' = world
+  let w' = world'
         { _worldRooms = M.adjust (addObject objectName objectId) playerPos rooms
         , _playerInventory = M.delete objectName playerInv
         , _playerVerbs = M.difference playerVerbs objectVerbs
         }
-  lift . put $ g { _gameStateWorld = w' }
+  lift . put $ gameState { _gameStateWorld = w' }
   emitEvent $ ItemDropped objectId playerPos
   where
     addObject objectName objectId r
@@ -612,9 +623,10 @@ examineInInventory
   => ItemName
   -> ExceptT GameError m ()
 examineInInventory objectName = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
-  objectId <- getObjectInInventory world objectName
-  object <- getObject world objectId
+  gameState <- lift get
+  let world' = gameState ^. world
+  objectId <- getObjectInInventory world' objectName
+  object <- getObject world' objectId
 
   addPlayerMessage . _gameObjectDescription $ object
   emitEvent $ ItemExamined objectId
@@ -624,9 +636,10 @@ examineInRoom
   => ItemName
   -> ExceptT GameError m ()
 examineInRoom objectName = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
-  objectId <- getObjectInCurrentRoom world objectName
-  object   <- getObject world objectId
+  gameState <- lift get
+  let world' = gameState ^. world
+  objectId <- getObjectInCurrentRoom world' objectName
+  object   <- getObject world' objectId
 
   addPlayerMessage . describeGameObject $ object
   emitEvent $ ItemExamined objectId
@@ -636,17 +649,18 @@ handleTake
   => [Text]
   -> ExceptT GameError m ()
 handleTake args = do
-  g@(GameState w _ _ _ _ _ _ _ _) <- lift get
+  gameState <- lift get
+  let world' = gameState ^. world
   case splitAtWord "from" args of
     Nothing       -> throwError $ MissingParameter "take what from what?"
     Just (xs, ys) -> do
       let containerName = keyArg ys
           itemName      = keyArg xs
-          playerInv     = _playerInventory w
-          objects       = _worldObjects w
+          playerInv     = _playerInventory world'
+          objects       = _worldObjects world'
 
-      objectId <- getObjectInCurrentRoom w containerName
-      object   <- getObject w objectId
+      objectId <- getObjectInCurrentRoom world' containerName
+      object   <- getObject world' objectId
       case _gameObjectObject object of
         ObjectItem _ -> throwError SpaceWizard
         ObjectContainer container' -> do
@@ -654,11 +668,11 @@ handleTake args = do
             M.lookup itemName (_containerItems container')
           let object' = object { _gameObjectObject = ObjectContainer container' { _containerItems = M.delete itemName (_containerItems container') } }
 
-          let w' = w
+          let w' = world'
                 { _worldObjects = M.insert objectId object' objects
                 , _playerInventory = putObjectInInventory itemName itemId playerInv
                 }
-          lift . put $ g { _gameStateWorld = w' }
+          lift . put $ gameState { _gameStateWorld = w' }
           emitEvent $ ItemTakenFromContainer itemId objectId
 
 handleDig
@@ -666,9 +680,10 @@ handleDig
   => [Text]
   -> ExceptT GameError m ()
 handleDig _ = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
-  let roomId = _worldPlayerRoom world
-  room <- currentRoom world
+  gameState <- lift get
+  let world' = gameState ^. world
+  let roomId = _worldPlayerRoom world'
+  room <- currentRoom world'
   case _roomDig room of
     Left failMsg -> addPlayerMessage failMsg
     Right [] -> do
@@ -681,7 +696,7 @@ handleDig _ = do
           addPlayerMessage successMsg
           emitEvent $ Dug roomId Nothing
         Just itemId -> do
-          object <- getObject world itemId
+          object <- getObject world' itemId
           putInInventory (_gameObjectName object) itemId
           addPlayerMessage successMsg
           emitEvent $ Dug roomId (Just itemId)
@@ -701,9 +716,10 @@ evalObjectInteraction
   => ObjectInteraction
   -> ExceptT GameError m ()
 evalObjectInteraction (ObjectInteraction subjectId predicateId command) = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
-  subjectObject <- getObject world subjectId
-  predicateObject <- getObject world predicateId
+  gameState <- lift get
+  let world' = gameState ^. world
+  subjectObject <- getObject world' subjectId
+  predicateObject <- getObject world' predicateId
   doObjectCommand subjectObject predicateObject command
   where
     doObjectCommand
@@ -713,7 +729,8 @@ evalObjectInteraction (ObjectInteraction subjectId predicateId command) = do
       -> Verb
       -> ExceptT GameError m ()
     doObjectCommand subjObj predObj (Verb "use") = do
-      g@(GameState world _ _ _ _ _ _ _ _) <- lift get
+      gameState <- lift get
+      let world' = gameState ^. world
       case _gameObjectObject predObj of
         ObjectItem _ ->
           throwError
@@ -725,10 +742,10 @@ evalObjectInteraction (ObjectInteraction subjectId predicateId command) = do
           case _containerLock c of
             Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
             Just (ContainerLock lck _) | subjectId `elem` _lockKeyItems lck -> do
-                       let world' = world { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world)
-                                          , _worldPlayerMessages = _lockSuccessMsg lck : _worldPlayerMessages world
-                                          }
-                       lift . put $ g { _gameStateWorld = world' }
+                       let world'' = world' { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world')
+                                            , _worldPlayerMessages = _lockSuccessMsg lck : _worldPlayerMessages world'
+                                            }
+                       lift . put $ gameState { _gameStateWorld = world'' }
                        emitEvent $ ContainerUnlocked predicateId subjectId
             Just (ContainerLock lck _) -> do
               let unlockError = _lockFailMsg lck
@@ -751,11 +768,12 @@ handleUse
   => [Text]
   -> ExceptT GameError m ()
 handleUse args = do
-  (GameState world _ _ _ _ _ _ _ _) <- lift get
+  gameState <- lift get
+  let world' = gameState ^. world
   case parseArgs args of
     Just (objectName, predicateName) -> do
-      objectId <- getObjectInInventory world objectName
-      predId <- getObjectInCurrentRoom world predicateName
+      objectId <- getObjectInInventory world' objectName
+      predId <- getObjectInCurrentRoom world' predicateName
       evalObjectInteraction $ ObjectInteraction objectId predId (Verb "use")
     Nothing -> addPlayerMessage "I don't know how to do that..."
   where
@@ -836,20 +854,21 @@ eitherToInput :: MonadError e (InputT m) => Either e a -> InputT m a
 eitherToInput (Left err)     = throwError err
 eitherToInput (Right result) = pure result
 
-makeFields ''GameState
 makeFields ''World
 
 updateGame :: GameState -> GameState
 updateGame gameState =
   case runIdentity . (`runStateT` gameState) . runExceptT $ handle' of
     (Left err, g) -> updateGameErrors g err
-    (Right _, g@(GameState world' rvs _ _ _ _ _ _ _)) ->
-      case runExcept $ render world' of
-        Left renderErr -> updateGameErrors g renderErr
-        Right rendered ->
-          g & scenes .~ rendered : rvs
-            & world .~ world' { _worldPlayerMessages = [] }
-            & inputBuffer .~ ""
+    (Right _, gameState') ->
+      let world' = gameState' ^. world
+      in case runExcept $ render world' of
+           Left renderErr -> updateGameErrors gameState' renderErr
+           Right rendered ->
+             gameState'
+               & scenes .~ rendered : gameState ^. scenes
+               & world .~ world' { _worldPlayerMessages = [] }
+               & inputBuffer .~ ""
   where
     updateGameErrors :: GameState -> GameError -> GameState
     updateGameErrors g@(GameState _ _ _ errs _ _ _ _ _) e
