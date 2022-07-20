@@ -474,8 +474,8 @@ handleWalk args = do
     movePlayer ext rm
       | _exitFrom ext == rm = do
           gameState <- lift get
-          let w' = (gameState ^. world) { _worldPlayerRoom = _exitTo ext }
-          lift . put $ gameState { _gameStateWorld = w' }
+          let w' = (gameState ^. world) & playerRoom .~ _exitTo ext
+          lift . put $ gameState & world .~ w'
           emitEvent $ PlayerMoved (_exitFrom ext) (_exitTo ext)
       | otherwise           = throwError SpaceWizard
     unlockDoor
@@ -484,8 +484,8 @@ handleWalk args = do
       -> ExceptT GameError m ()
     unlockDoor eid = do
       gameState <- lift get
-      w' <- modifyExit (_gameStateWorld gameState) eid unlockExit
-      lift . put $ gameState { _gameStateWorld = w' }
+      w' <- modifyExit (gameState ^. world) eid unlockExit
+      lift . put $ gameState & world .~ w'
     unlockExit :: Exit -> Exit
     unlockExit exit@(Exit _ _ _ _ (Just lck)) =
       exit { _exitLock = Just lck { _lockState = Unlocked } }
@@ -510,14 +510,12 @@ handlePickup args = do
     M.lookup (world' ^. playerRoom) (world' ^. rooms)
   object <- maybeThrow (ObjectDoesNotExist objectId) $
     M.lookup objectId (world' ^. objects)
-  -- TODO (james): add support for container verbiage
   itemVerbs <- maybeThrow SpaceWizard . itemObjectVerbAliasMap $ object
   let w' = world'
-           { _worldRooms = M.adjust (removeItem objectName) (world' ^. playerRoom) (world' ^. rooms)
-           , _worldPlayerInventory = putObjectInInventory objectName objectId (world' ^. playerInventory)
-           , _worldPlayerVerbs = M.union (_worldPlayerVerbs world') itemVerbs
-           }
-  lift . put $ gameState { _gameStateWorld = w' }
+        & rooms .~ M.adjust (removeItem objectName) (world' ^. playerRoom) (world' ^. rooms)
+        & playerInventory .~ putObjectInInventory objectName objectId (world' ^. playerInventory)
+        & playerVerbs .~ M.union (_worldPlayerVerbs world') itemVerbs
+  lift . put $ gameState & world .~ w'
   emitEvent (ItemPickedUp objectId (world' ^. playerRoom))
   where
     removeItem objectName r = r
@@ -544,7 +542,8 @@ lookInContainer
   :: ( MonadState GameState m, Monad m )
   => Text -> ExceptT GameError m ()
 lookInContainer containerName = do
-  (GameState w _ _ _ _ _ _ _ _) <- lift get
+  gameState <- lift get
+  let w = gameState ^. world
   containerId <- getObjectInCurrentRoom w containerName
   container'  <- getObject w containerId
   case _gameObjectObject container' of
@@ -566,8 +565,8 @@ lookInContainer containerName = do
       -> Container
       -> ExceptT GameError m ()
     doLookInContainer contId cont = do
-      (GameState w _ _ _ _ _ _ _ _) <- lift get
-      items <- traverse (getObject w) $ M.elems (_containerItems cont)
+      gameState <- lift get
+      items <- traverse (getObject $ gameState ^. world) $ M.elems (_containerItems cont)
       let itemNames = T.intercalate ", " . map _gameObjectName $ items
       addPlayerMessage $ "Inside the " <> containerName <> " you see: " <> itemNames
       emitEvent $ PlayerLookedInContainer contId
@@ -587,11 +586,10 @@ handleDrop args = do
   let objectVerbs = fromMaybe M.empty . itemObjectVerbAliasMap $ object
 
   let w' = world'
-        { _worldRooms = M.adjust (addObject objectName objectId) (world' ^. playerRoom) (world' ^. rooms)
-        , _worldPlayerInventory = M.delete objectName (world' ^. playerInventory)
-        , _worldPlayerVerbs = M.difference (world' ^. playerVerbs) objectVerbs
-        }
-  lift . put $ gameState { _gameStateWorld = w' }
+        & rooms .~ M.adjust (addObject objectName objectId) (world' ^. playerRoom) (world' ^. rooms)
+        & playerInventory .~ M.delete objectName (world' ^. playerInventory)
+        & playerVerbs .~ M.difference (world' ^. playerVerbs) objectVerbs
+  lift . put $ gameState & world .~ w'
   emitEvent $ ItemDropped objectId (world' ^. playerRoom)
   where
     addObject objectName objectId r
@@ -659,10 +657,9 @@ handleTake args = do
           let object' = object { _gameObjectObject = ObjectContainer container' { _containerItems = M.delete itemName (_containerItems container') } }
 
           let w' = world'
-                { _worldObjects = M.insert objectId object' (world' ^. objects)
-                , _worldPlayerInventory = putObjectInInventory itemName itemId (world' ^. playerInventory)
-                }
-          lift . put $ gameState { _gameStateWorld = w' }
+                & objects .~ M.insert objectId object' (world' ^. objects)
+                & playerInventory .~ putObjectInInventory itemName itemId (world' ^. playerInventory)
+          lift . put $ gameState & world .~ w'
           emitEvent $ ItemTakenFromContainer itemId objectId
 
 handleDig
@@ -672,7 +669,7 @@ handleDig
 handleDig _ = do
   gameState <- lift get
   let world' = gameState ^. world
-  let roomId = _worldPlayerRoom world'
+  let roomId = world' ^. playerRoom
   room <- currentRoom world'
   case _roomDig room of
     Left failMsg -> addPlayerMessage failMsg
@@ -732,10 +729,10 @@ evalObjectInteraction (ObjectInteraction subjectId predicateId command) = do
           case _containerLock c of
             Nothing -> throwError $ InvalidCommand (_gameObjectName predObj <> " is not locked!")
             Just (ContainerLock lck _) | subjectId `elem` _lockKeyItems lck -> do
-                       let world'' = world' { _worldObjects = M.adjust (unlock lck) predicateId (_worldObjects world')
-                                            , _worldPlayerMessages = _lockSuccessMsg lck : _worldPlayerMessages world'
-                                            }
-                       lift . put $ gameState { _gameStateWorld = world'' }
+                       let world'' = world'
+                             & objects .~ M.adjust (unlock lck) predicateId (world' ^. objects)
+                             & playerMessages .~ _lockSuccessMsg lck : world' ^. playerMessages
+                       lift . put $ gameState & world .~ world''
                        emitEvent $ ContainerUnlocked predicateId subjectId
             Just (ContainerLock lck _) -> do
               let unlockError = _lockFailMsg lck
