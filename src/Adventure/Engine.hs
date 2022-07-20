@@ -60,6 +60,8 @@ itemObjectVerbAliasMap (GameObject _ _ (ObjectItem item'))
   = pure . M.fromList . _itemVerbs $ item'
 itemObjectVerbAliasMap _ = Nothing
 
+type VerbAliasMap = Map Verb Verb
+
 data Scene
   = Scene
   { _sceneTitle       :: Text
@@ -79,8 +81,8 @@ data World
   , _worldObjects     :: Map (EntityId GameObject) GameObject
   , _worldExits       :: Map (EntityId Exit) Exit
   , _worldPlayerRoom  :: EntityId Room
-  , _playerInventory  :: Map Text (EntityId GameObject)
-  , _playerVerbs      :: VerbAliasMap
+  , _worldPlayerInventory  :: Map Text (EntityId GameObject)
+  , _worldPlayerVerbs      :: VerbAliasMap
   , _worldPlayerMessages :: [Text]
   }
   deriving (Eq, Show)
@@ -107,7 +109,8 @@ instance JSON.FromJSON World where
     <*> v .: "playerVerbs"
     <*> pure mempty
 
-type VerbAliasMap = Map Verb Verb
+makeFields ''World
+
 
 -- TODO (james): a better way to show errors
 data GameState
@@ -121,7 +124,6 @@ data GameState
   , _gameStateGameEndRewards :: NonEmpty GameEndReward
   , _gameStateIsGameEnd      :: Maybe GameEndReward
   , _gameStateImageCache     :: Map Text ImageData
---  , _gameStateCurrentBackground :: Maybe FilePath
   }
   deriving (Eq, Show)
 
@@ -186,10 +188,9 @@ updateCurrentRoom
 updateCurrentRoom update = do
   gameState <- lift get
   let world'  = gameState ^. world
-      roomMap = _worldRooms world'
   lift $ put gameState
     { _gameStateWorld = world'
-      { _worldRooms = M.update (Just . update) (_worldPlayerRoom world') roomMap
+      { _worldRooms = M.update (Just . update) (_worldPlayerRoom world') (world' ^. rooms)
       }
     }
 
@@ -199,10 +200,10 @@ getObjectInInventory
   -> Text
   -> ExceptT GameError m (EntityId GameObject)
 getObjectInInventory w objectName =
-  fetch (ObjectNotInInventory objectName) objectName $ _playerInventory w
+  fetch (ObjectNotInInventory objectName) objectName $ _worldPlayerInventory w
 
 getInventoryObjects :: Monad m => World -> ExceptT GameError m [GameObject]
-getInventoryObjects w = traverse (getObject w) $ M.elems (_playerInventory w)
+getInventoryObjects w = traverse (getObject w) $ M.elems (_worldPlayerInventory w)
 
 getObjectByName
   :: ( MonadState GameState m, Monad m)
@@ -211,7 +212,7 @@ getObjectByName
 getObjectByName objectName = do
   gameState <- lift get
   objectId <- maybeThrow (ObjectNotInInventory objectName) $
-    M.lookup objectName (_playerInventory $ gameState ^. world)
+    M.lookup objectName (_worldPlayerInventory $ gameState ^. world)
   object <- maybeThrow (ObjectNotInInventory objectName) $
     M.lookup objectId (_worldObjects $ gameState ^. world)
   pure (objectId, object)
@@ -233,13 +234,14 @@ modifyObject
   -> EntityId GameObject
   -> (GameObject -> GameObject)
   -> ExceptT GameError m World
-modifyObject w@(World _ objects _ _ _ _ _) objectId f =
-  pure $ w { _worldObjects = M.adjust f objectId objects }
+modifyObject world' objectId f =
+  pure $ world' { _worldObjects = M.adjust f objectId (world' ^. objects) }
 
 getExitId :: Monad m => World -> Text -> ExceptT GameError m (EntityId Exit)
-getExitId w exitName =
-  let exits = _worldExits w
-  in liftEither $ note SpaceWizard $ findInMap (\e -> _exitName e == exitName) exits
+getExitId world' exitName =
+  liftEither
+  $ note SpaceWizard
+  $ findInMap (\e -> _exitName e == exitName) (world' ^. exits)
 
 modifyExit
   :: Monad m
@@ -247,15 +249,15 @@ modifyExit
   -> EntityId Exit
   -> (Exit -> Exit)
   -> ExceptT GameError m World
-modifyExit w@(World _ _ exits _ _ _ _) exitId f =
-  pure $ w { _worldExits = M.adjust f exitId exits }
+modifyExit world' exitId f =
+  pure $ world' { _worldExits = M.adjust f exitId (world' ^. exits) }
 
 -- TODO (james): Might replace this with accessors into some kind of player state record
 getPlayerInventory :: GameState -> [GameObject]
 getPlayerInventory gameState =
   case runExcept $ getInventoryObjects $ _gameStateWorld gameState of
     Left err -> error $ "Error getting inventory: " ++ show err
-    Right objects -> objects
+    Right objects' -> objects'
 
 putInInventory
   :: ( Monad m, MonadState GameState m )
@@ -264,10 +266,10 @@ putInInventory
   -> ExceptT GameError m ()
 putInInventory objectName objectId = do
   gameState <- lift get
-  let playerInv = _playerInventory $ gameState ^. world
+  let playerInv = gameState ^. (world . playerInventory)
   lift . put $ gameState
     { _gameStateWorld = (gameState ^. world)
-      { _playerInventory = putObjectInInventory objectName objectId playerInv
+      { _worldPlayerInventory = putObjectInInventory objectName objectId playerInv
       }
     }
 
@@ -382,7 +384,7 @@ handle' :: (Monad m, MonadState GameState m) => ExceptT GameError m ()
 handle' = do
   gameState <- lift get
   (v, args) <- parse $ gameState ^. inputBuffer
-  verb <- getVerb (_playerVerbs $ gameState ^. world) v
+  verb <- getVerb (_worldPlayerVerbs $ gameState ^. world) v
   handleVerb verb args
   checkGameEnd
 
@@ -445,27 +447,25 @@ handleWalk [] = throwError $ MissingParameter "missing destination"
 handleWalk args = do
   gameState <- lift get
   let world'     = gameState ^. world
-      rooms      = _worldRooms world'
-      playerRoom = _worldPlayerRoom world'
       exitName   = keyArg args
 
   (exitId, exit) <- exitCurrentRoom exitName
   _ <- maybeThrow (RoomDoesNotExist (_exitFrom exit)) $
-    M.lookup (_exitFrom exit) rooms
+    M.lookup (_exitFrom exit) (world' ^. rooms)
   _ <- maybeThrow (RoomDoesNotExist (_exitTo exit)) $
-    M.lookup (_exitTo exit) rooms
+    M.lookup (_exitTo exit) (world' ^. rooms)
   case _exitLock exit of
-    Nothing -> movePlayer exit playerRoom
+    Nothing -> movePlayer exit (world' ^. playerRoom)
     Just (Lock keyItems errText successText Locked)
-      | playerHasKeyItems (M.elems . _playerInventory $ world') keyItems -> do
+      | playerHasKeyItems (M.elems . _worldPlayerInventory $ world') keyItems -> do
         addPlayerMessage successText
         unlockDoor exitId
         emitEvent $ DoorUnlocked exitId
-        movePlayer exit playerRoom
+        movePlayer exit (world' ^. playerRoom)
       | otherwise -> do
           addPlayerMessage errText
-          emitEvent $ PlayerMoveFailed playerRoom exitId
-    Just (Lock _ _ _ Unlocked) -> movePlayer exit playerRoom
+          emitEvent $ PlayerMoveFailed (world' ^. playerRoom) exitId
+    Just (Lock _ _ _ Unlocked) -> movePlayer exit (world' ^. playerRoom)
   where
     movePlayer :: (MonadState GameState m, Monad m)
       => Exit
@@ -491,9 +491,9 @@ handleWalk args = do
       exit { _exitLock = Just lck { _lockState = Unlocked } }
     unlockExit exit = exit
     playerHasKeyItems :: [EntityId GameObject] -> [EntityId GameObject] -> Bool
-    playerHasKeyItems playerInventory exitKeyItems =
+    playerHasKeyItems playerInv exitKeyItems =
       let exitEntityIds = map getEntityId exitKeyItems
-      in exitEntityIds `intersect` map getEntityId playerInventory == exitEntityIds
+      in exitEntityIds `intersect` map getEntityId playerInv == exitEntityIds
 
 handlePickup
   :: ( Monad m, MonadState GameState m )
@@ -504,25 +504,21 @@ handlePickup args = do
   gameState <- lift get
   let objectName = keyArg args
       world'     = gameState ^. world
-      playerRoom = _worldPlayerRoom world'
-      playerInv  = _playerInventory world'
-      rooms      = _worldRooms world'
-      objects    = _worldObjects world'
 
   objectId <- getObjectInCurrentRoom world' objectName
   _ <- maybeThrow SpaceWizard $
-    M.lookup playerRoom rooms
+    M.lookup (world' ^. playerRoom) (world' ^. rooms)
   object <- maybeThrow (ObjectDoesNotExist objectId) $
-    M.lookup objectId objects
+    M.lookup objectId (world' ^. objects)
   -- TODO (james): add support for container verbiage
   itemVerbs <- maybeThrow SpaceWizard . itemObjectVerbAliasMap $ object
   let w' = world'
-           { _worldRooms = M.adjust (removeItem objectName) playerRoom rooms
-           , _playerInventory = putObjectInInventory objectName objectId playerInv
-           , _playerVerbs = M.union (_playerVerbs world') itemVerbs
+           { _worldRooms = M.adjust (removeItem objectName) (world' ^. playerRoom) (world' ^. rooms)
+           , _worldPlayerInventory = putObjectInInventory objectName objectId (world' ^. playerInventory)
+           , _worldPlayerVerbs = M.union (_worldPlayerVerbs world') itemVerbs
            }
   lift . put $ gameState { _gameStateWorld = w' }
-  emitEvent (ItemPickedUp objectId playerRoom)
+  emitEvent (ItemPickedUp objectId (world' ^. playerRoom))
   where
     removeItem objectName r = r
       { _roomObjects = M.update (const Nothing) objectName (_roomObjects r)
@@ -584,10 +580,6 @@ handleDrop [] = throwError $ MissingParameter "drop what?"
 handleDrop args = do
   gameState <- lift get
   let world'      = gameState ^. world
-      playerPos   = _worldPlayerRoom world'
-      playerInv   = _playerInventory world'
-      playerVerbs = _playerVerbs world'
-      rooms       = _worldRooms world'
       objectName  = keyArg args
 
   (objectId, object) <- getObjectByName objectName
@@ -595,12 +587,12 @@ handleDrop args = do
   let objectVerbs = fromMaybe M.empty . itemObjectVerbAliasMap $ object
 
   let w' = world'
-        { _worldRooms = M.adjust (addObject objectName objectId) playerPos rooms
-        , _playerInventory = M.delete objectName playerInv
-        , _playerVerbs = M.difference playerVerbs objectVerbs
+        { _worldRooms = M.adjust (addObject objectName objectId) (world' ^. playerRoom) (world' ^. rooms)
+        , _worldPlayerInventory = M.delete objectName (world' ^. playerInventory)
+        , _worldPlayerVerbs = M.difference (world' ^. playerVerbs) objectVerbs
         }
   lift . put $ gameState { _gameStateWorld = w' }
-  emitEvent $ ItemDropped objectId playerPos
+  emitEvent $ ItemDropped objectId (world' ^. playerRoom)
   where
     addObject objectName objectId r
       = r { _roomObjects = M.insert objectName objectId (_roomObjects r) }
@@ -656,8 +648,6 @@ handleTake args = do
     Just (xs, ys) -> do
       let containerName = keyArg ys
           itemName      = keyArg xs
-          playerInv     = _playerInventory world'
-          objects       = _worldObjects world'
 
       objectId <- getObjectInCurrentRoom world' containerName
       object   <- getObject world' objectId
@@ -669,8 +659,8 @@ handleTake args = do
           let object' = object { _gameObjectObject = ObjectContainer container' { _containerItems = M.delete itemName (_containerItems container') } }
 
           let w' = world'
-                { _worldObjects = M.insert objectId object' objects
-                , _playerInventory = putObjectInInventory itemName itemId playerInv
+                { _worldObjects = M.insert objectId object' (world' ^. objects)
+                , _worldPlayerInventory = putObjectInInventory itemName itemId (world' ^. playerInventory)
                 }
           lift . put $ gameState { _gameStateWorld = w' }
           emitEvent $ ItemTakenFromContainer itemId objectId
@@ -793,20 +783,20 @@ handleUse args = do
     tupMap f g (x, y) = (f x, g y)
 
 render :: Monad m => World -> ExceptT GameError m Scene
-render w@(World _ _ exits _ _ _ messages) = do
-  room       <- currentRoom w
-  objects'   <- traverse (getObject w) $ M.elems (_roomObjects room)
+render world' = do
+  room       <- currentRoom world'
+  objects'   <- traverse (getObject world') $ M.elems (_roomObjects room)
   exits'     <- traverse getExit $ M.elems . _roomExits $ room
   pure $ Scene
     { _sceneTitle = _roomName room
     , _sceneDescription = _roomDescription room
     , _sceneObjects = objects'
     , _sceneExits = exits'
-    , _sceneMessages = messages
+    , _sceneMessages = world' ^. playerMessages
     }
   where
     getExit exitId =
-      case M.lookup exitId exits of
+      case M.lookup exitId (world' ^. exits) of
         Nothing   -> throwError $ ExitDoesNotExist exitId
         Just exit -> pure exit
 
@@ -853,8 +843,6 @@ maybeError err Nothing = error err
 eitherToInput :: MonadError e (InputT m) => Either e a -> InputT m a
 eitherToInput (Left err)     = throwError err
 eitherToInput (Right result) = pure result
-
-makeFields ''World
 
 updateGame :: GameState -> GameState
 updateGame gameState =
