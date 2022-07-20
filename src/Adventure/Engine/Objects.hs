@@ -2,10 +2,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Adventure.Engine.Objects where
 
+import Control.Lens
 import qualified Data.Aeson as JSON
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as M
@@ -145,3 +149,8 @@ deriving anyclass instance JSON.FromJSONKey (EntityId Exit)
 deriving anyclass instance JSON.FromJSON (EntityId GameObject)
 deriving anyclass instance JSON.FromJSONKey (EntityId GameObject)
 deriving anyclass instance JSON.FromJSON (EntityId Item)
+
+makeFields ''GameObject
+makePrisms ''Object
+makeFields ''Container
+makeFields ''Item
