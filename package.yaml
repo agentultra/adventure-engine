@@ -41,6 +41,7 @@ library:
   - haskeline
   - JuicyPixels
   - lens
+  - megaparsec
   - monomer
   - mtl
   - text

@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 798611c58d31832c93dbd8bf86b095354b94466e7a6d48fc374d82fdf2efe4de
+-- hash: 7c5ab0d135e6a45a07562603d2c1882f7a8bc1d1c221b0c434a6b836c3a8d748
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -38,6 +38,7 @@ library
       Adventure.GUI
       Adventure.GUI.Widgets.Keystroke
       Adventure.List.Utils
+      Maker.Parser
   other-modules:
       Paths_adventure_engine
   hs-source-dirs:
@@ -58,6 +59,7 @@ library
     , filepath
     , haskeline
     , lens
+    , megaparsec
     , monomer
     , mtl
     , text
