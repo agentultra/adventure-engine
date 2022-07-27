@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 043f7fc00c1075a4643c2071f00daa5cecd6e4a225299f39e056ab694dbd8813
+-- hash: 798611c58d31832c93dbd8bf86b095354b94466e7a6d48fc374d82fdf2efe4de
 
 name:           adventure-engine
 version:        0.1.0.0
@@ -70,6 +70,22 @@ executable adventure-engine-exe
       Paths_adventure_engine
   hs-source-dirs:
       app
+  default-extensions:
+      LambdaCase
+      OverloadedStrings
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      adventure-engine
+    , base >=4.7 && <5
+    , text
+  default-language: Haskell2010
+
+executable adventure-maker
+  main-is: Main.hs
+  other-modules:
+      Paths_adventure_engine
+  hs-source-dirs:
+      adventure-maker
   default-extensions:
       LambdaCase
       OverloadedStrings
