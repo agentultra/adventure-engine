@@ -1,5 +1,6 @@
 module Maker where
 
+import Codec.Archive.Zip
 import qualified Data.Aeson as JSON
 import qualified Data.Text.IO as T
 import Maker.Parser
@@ -21,11 +22,15 @@ run = do
 processPath :: FilePath -> IO ()
 processPath path = do
   let worldTxtPath = path </> "world.txt"
+      worldJsonPath = path </> "world.json"
       outputPath = path </> "build"
   createDirectoryIfMissing True outputPath
   worldTxt <- T.readFile worldTxtPath
   let worldDataResult = runParser worldParser worldTxtPath worldTxt
   case worldDataResult of
     Left err -> putStrLn . errorBundlePretty $ err
-    Right worldData ->
-      JSON.encodeFile (outputPath </> "world.json") worldData
+    Right worldData -> do
+      JSON.encodeFile worldJsonPath worldData
+      createArchive (outputPath </> "game.zip") $ do
+        worldJsonEntry <- mkEntrySelector "world.json"
+        loadEntry Deflate worldJsonEntry worldJsonPath
