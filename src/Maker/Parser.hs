@@ -2,8 +2,10 @@
 
 module Maker.Parser where
 
-import Adventure.Engine.Objects
+import Adventure.Engine
+import Adventure.Engine.Database
 import Control.Monad
+import qualified Data.Map as M
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void
@@ -48,3 +50,16 @@ sectionParser sectionName p sep = do
 
 roomSectionParser :: Parser [Room]
 roomSectionParser = sectionParser "Rooms" roomParser $ void newline <|> eof
+
+worldParser :: Parser World
+worldParser = do
+  worldRooms <- roomSectionParser
+  pure $ World
+    { _worldRooms = M.fromList $ zip [EntityId x | x <- [0..]] worldRooms
+    , _worldObjects = mempty
+    , _worldExits = mempty
+    , _worldPlayerRoom = EntityId 0
+    , _worldPlayerInventory = mempty
+    , _worldPlayerVerbs = mempty
+    , _worldPlayerMessages = mempty
+    }
