@@ -1,5 +1,5 @@
 [Rooms]
-# The Front Porch
+# 1. The Front Porch
 
 The front porch is spooky
 
@@ -8,11 +8,11 @@ lKJSDLFKJSD
 SDLKFJLSDKFJLSDKJ
 LSKDFJLSDKFJLSKDJF
 #
-# The Main Hall
+# 2. The Main Hall
 
 This is the main hall, it is great.
 #
-# Another Dimension
+# 3. Another Dimension
 
 HERE WE ARE. NEAR THE END. PREPARE FOR PASTA.
 #

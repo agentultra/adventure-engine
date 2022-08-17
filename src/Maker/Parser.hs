@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Maker.Parser where
 
@@ -24,21 +25,27 @@ lineParser = do
   str <- T.pack <$> manyTill latin1Char newline
   pure $ if T.null str then "\n" else str
 
-roomParser :: Parser Room
+entityIdParser :: Parser (EntityId a)
+entityIdParser = do
+  digits <- manyTill digitChar (single '.')
+  pure . EntityId $ read digits
+
+roomParser :: Parser (EntityId Room, Room)
 roomParser = do
   void . single $ '#'
   space1
+  roomId <- entityIdParser @Room
   roomName <- nonEmptyLineParser
   roomDescLines <- manyTill lineParser $ single '#'
-  pure
-    $ Room
-    { _roomName = roomName
-    , _roomDescription = T.strip . T.concat $ roomDescLines
-    , _roomObjects = mempty
-    , _roomExits = mempty
-    , _roomDig = Left "You can't do that here.."
-    , _roomBackground = Nothing
-    }
+  let room = Room
+        { _roomName = roomName
+        , _roomDescription = T.strip . T.concat $ roomDescLines
+        , _roomObjects = mempty
+        , _roomExits = mempty
+        , _roomDig = Left "You can't do that here.."
+        , _roomBackground = Nothing
+        }
+  pure (roomId, room)
 
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
@@ -48,14 +55,14 @@ sectionParser sectionName p sep = do
   void newline
   sepEndBy p sep
 
-roomSectionParser :: Parser [Room]
+roomSectionParser :: Parser [(EntityId Room, Room)]
 roomSectionParser = sectionParser "Rooms" roomParser $ void newline <|> eof
 
 worldParser :: Parser World
 worldParser = do
   worldRooms <- roomSectionParser
   pure $ World
-    { _worldRooms = M.fromList $ zip [EntityId x | x <- [0..]] worldRooms
+    { _worldRooms = M.fromList worldRooms
     , _worldObjects = mempty
     , _worldExits = mempty
     , _worldPlayerRoom = EntityId 0
