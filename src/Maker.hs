@@ -26,7 +26,7 @@ processPath path = do
       outputPath = path </> "build"
   createDirectoryIfMissing True outputPath
   worldTxt <- T.readFile worldTxtPath
-  let worldDataResult = runParser worldParser worldTxtPath worldTxt
+  let worldDataResult = runMakerParser worldParser worldTxtPath worldTxt
   case worldDataResult of
     Left err -> putStrLn . errorBundlePretty $ err
     Right worldData -> do

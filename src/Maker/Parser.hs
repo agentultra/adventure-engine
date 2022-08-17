@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TypeApplications #-}
 
 module Maker.Parser where
@@ -6,14 +7,20 @@ module Maker.Parser where
 import Adventure.Engine
 import Adventure.Engine.Database
 import Control.Monad
+import Control.Monad.Identity
+import Control.Monad.State
 import qualified Data.Map as M
+import Data.Set (Set)
+import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void
 import Text.Megaparsec
 import Text.Megaparsec.Char
 
-type Parser = Parsec Void Text
+newtype MakerParseState = MakerParseState { seenRoomEntityIds :: Set (EntityId Room) }
+
+type Parser = ParsecT Void Text (StateT MakerParseState Identity)
 
 nonEmptyLineParser :: Parser Text
 nonEmptyLineParser = do
@@ -32,9 +39,12 @@ entityIdParser = do
 
 roomParser :: Parser (EntityId Room, Room)
 roomParser = do
+  s@MakerParseState {..} <- lift get
   void . single $ '#'
   space1
   roomId <- entityIdParser @Room
+  when (roomId `S.member` seenRoomEntityIds) $ fail "Room IDs must be unique"
+  lift . put $ s { seenRoomEntityIds = roomId `S.insert` seenRoomEntityIds }
   roomName <- nonEmptyLineParser
   roomDescLines <- manyTill lineParser $ single '#'
   let room = Room
@@ -70,3 +80,9 @@ worldParser = do
     , _worldPlayerVerbs = mempty
     , _worldPlayerMessages = mempty
     }
+
+runMakerParser :: Parser a -> FilePath -> Text -> Either (ParseErrorBundle Text Void) a
+runMakerParser p fpath
+  = runIdentity
+  . (`evalStateT` MakerParseState S.empty)
+  . runParserT p fpath
