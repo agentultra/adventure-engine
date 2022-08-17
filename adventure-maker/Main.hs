@@ -1,4 +1,6 @@
 module Main where
 
+import Maker
+
 main :: IO ()
-main = putStrLn "Hello, adventure maker!"
+main = run
