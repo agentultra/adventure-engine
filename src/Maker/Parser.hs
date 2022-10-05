@@ -47,15 +47,20 @@ roomParser = do
   lift . put $ s { seenRoomEntityIds = roomId `S.insert` seenRoomEntityIds }
   roomName <- nonEmptyLineParser
   roomDescLines <- manyTill lineParser $ single '#'
+  void newline
+  exitIds <- propertyParser @Exit "Exits"
   let room = Room
         { _roomName = roomName
         , _roomDescription = T.strip . T.concat $ roomDescLines
         , _roomObjects = mempty
-        , _roomExits = mempty
+        , _roomExits = M.fromList . map exitRefToMap $ exitIds
         , _roomDig = Left "You can't do that here.."
         , _roomBackground = Nothing
         }
   pure (roomId, room)
+  where
+    exitRefToMap :: EntityRef Exit -> (Text, EntityId Exit)
+    exitRefToMap (EntityRef entityId exitName) = (exitName, entityId)
 
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
@@ -81,8 +86,44 @@ worldParser = do
     , _worldPlayerMessages = mempty
     }
 
+-- | Represents a reference to an entity in the game source text.
+--
+-- Written as @(1. FooName)@ in the source.  We get the type parameter
+-- from the context of the parse.  If we're parsing a list of "exits"
+-- then we know 'a' must be of type 'Exit'.
+data EntityRef a
+  = EntityRef
+  { _entityRefEntityId :: EntityId a
+  , _entityRefName     :: Text
+  }
+  deriving (Eq, Show)
+
+-- | Parse an entity reference in the source text.
+--
+-- Callers should determine type parameter of the EntityId.
+entityRefParser :: Parser (EntityRef a)
+entityRefParser = do
+  void . single $ '('
+  entityId <- entityIdParser
+  space1
+  entityName <- T.pack <$> manyTill latin1Char (single ')')
+  pure $ EntityRef entityId entityName
+
+propertyParser :: Text -> Parser [EntityRef a]
+propertyParser lbl = do
+  void . string $ "-- "
+  void . string $ lbl
+  void . single $ ':'
+  space1
+  sepEndBy entityRefParser (void . string $ ", ")
+
 runMakerParser :: Parser a -> FilePath -> Text -> Either (ParseErrorBundle Text Void) a
 runMakerParser p fpath
   = runIdentity
   . (`evalStateT` MakerParseState S.empty)
   . runParserT p fpath
+
+testMakerParser :: Show a => Parser a -> Text -> IO ()
+testMakerParser p txt = do
+  let result = runMakerParser p "test" txt
+  print result
