@@ -49,18 +49,19 @@ roomParser = do
   roomDescLines <- manyTill lineParser $ single '#'
   void newline
   exitIds <- propertyParser1 @Exit "Exits"
+  objectIds <- propertyParser @GameObject "Objects"
   let room = Room
         { _roomName = roomName
         , _roomDescription = T.strip . T.concat $ roomDescLines
-        , _roomObjects = mempty
-        , _roomExits = M.fromList . map exitRefToMap $ exitIds
+        , _roomObjects = M.fromList . map entityRefToMap $ objectIds
+        , _roomExits = M.fromList . map entityRefToMap $ exitIds
         , _roomDig = Left "You can't do that here.."
         , _roomBackground = Nothing
         }
   pure (roomId, room)
   where
-    exitRefToMap :: EntityRef Exit -> (Text, EntityId Exit)
-    exitRefToMap (EntityRef entityId exitName) = (exitName, entityId)
+    entityRefToMap :: EntityRef a -> (Text, EntityId a)
+    entityRefToMap (EntityRef entityId entityName) = (entityName, entityId)
 
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
@@ -114,16 +115,20 @@ propertyParser lbl = do
   void . string $ "-- "
   void . string $ lbl
   void . single $ ':'
-  space1
-  sepEndBy entityRefParser (void . string $ ", ")
+  hspace
+  entityRefs <- sepEndBy entityRefParser (void . string $ ", ")
+  void newline
+  pure entityRefs
 
 propertyParser1 :: Text -> Parser [EntityRef a]
 propertyParser1 lbl = do
   void . string $ "-- "
   void . string $ lbl
   void . single $ ':'
-  space1
-  sepEndBy1 entityRefParser (void . string $ ", ")
+  hspace
+  entityRefs <- sepEndBy1 entityRefParser (void . string $ ", ")
+  void newline
+  pure entityRefs
 
 runMakerParser :: Parser a -> FilePath -> Text -> Either (ParseErrorBundle Text Void) a
 runMakerParser p fpath

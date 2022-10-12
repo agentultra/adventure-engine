@@ -9,15 +9,19 @@ SDLKFJLSDKFJLSDKJ
 LSKDFJLSDKFJLSKDJF
 #
 -- Exits: (1. Front Door), (3. Black Portal)
+-- Objects: (1. Baz)
+
 # 2. The Main Hall
 
 This is the main hall, it is great.
-
 #
 -- Exits: (2. Front Door)
+-- Objects:
+
 # 3. Another Dimension
 
 HERE WE ARE. NEAR THE END. PREPARE FOR PASTA.
 
 #
 -- Exits: (4. Black Door)
+-- Objects:
