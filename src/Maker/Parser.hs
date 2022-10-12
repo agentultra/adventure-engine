@@ -48,7 +48,7 @@ roomParser = do
   roomName <- nonEmptyLineParser
   roomDescLines <- manyTill lineParser $ single '#'
   void newline
-  exitIds <- propertyParser @Exit "Exits"
+  exitIds <- propertyParser1 @Exit "Exits"
   let room = Room
         { _roomName = roomName
         , _roomDescription = T.strip . T.concat $ roomDescLines
@@ -116,6 +116,14 @@ propertyParser lbl = do
   void . single $ ':'
   space1
   sepEndBy entityRefParser (void . string $ ", ")
+
+propertyParser1 :: Text -> Parser [EntityRef a]
+propertyParser1 lbl = do
+  void . string $ "-- "
+  void . string $ lbl
+  void . single $ ':'
+  space1
+  sepEndBy1 entityRefParser (void . string $ ", ")
 
 runMakerParser :: Parser a -> FilePath -> Text -> Either (ParseErrorBundle Text Void) a
 runMakerParser p fpath
