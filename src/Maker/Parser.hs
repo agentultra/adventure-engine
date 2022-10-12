@@ -15,6 +15,7 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Void
+import System.FilePath
 import Text.Megaparsec
 import Text.Megaparsec.Char
 
@@ -50,18 +51,32 @@ roomParser = do
   void newline
   exitIds <- propertyParser1 @Exit "Exits"
   objectIds <- propertyParser @GameObject "Objects"
+  bg <- option Nothing backgroundImageParser
   let room = Room
         { _roomName = roomName
         , _roomDescription = T.strip . T.concat $ roomDescLines
         , _roomObjects = M.fromList . map entityRefToMap $ objectIds
         , _roomExits = M.fromList . map entityRefToMap $ exitIds
         , _roomDig = Left "You can't do that here.."
-        , _roomBackground = Nothing
+        , _roomBackground = bg
         }
   pure (roomId, room)
   where
     entityRefToMap :: EntityRef a -> (Text, EntityId a)
     entityRefToMap (EntityRef entityId entityName) = (entityName, entityId)
+
+backgroundImageParser :: Parser (Maybe Text)
+backgroundImageParser = do
+  void . string $ "-- Background: "
+  bgName <- backgroundFilenameParser
+  pure . Just $ bgName
+
+backgroundFilenameParser :: Parser Text
+backgroundFilenameParser = do
+  path <- nonEmptyLineParser
+  if ".bmp" `T.isSuffixOf` path
+    then pure . T.pack . takeFileName . T.unpack $ path
+    else fail "Unsupported background file extension"
 
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do

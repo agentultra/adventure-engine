@@ -17,6 +17,7 @@ This is the main hall, it is great.
 #
 -- Exits: (2. Front Door)
 -- Objects:
+-- Background: elkjsdfsdf/foo_image_whatever.bmp
 
 # 3. Another Dimension
 
