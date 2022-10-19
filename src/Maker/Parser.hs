@@ -125,22 +125,23 @@ entityRefParser = do
   entityName <- T.pack <$> manyTill latin1Char (single ')')
   pure $ EntityRef entityId entityName
 
-propertyParser :: Text -> Parser [EntityRef a]
-propertyParser lbl = do
+propertyLabelParser :: Text -> Parser ()
+propertyLabelParser lbl = do
   void . string $ "-- "
   void . string $ lbl
   void . single $ ':'
   hspace
+
+propertyParser :: Text -> Parser [EntityRef a]
+propertyParser lbl = do
+  propertyLabelParser lbl
   entityRefs <- sepEndBy entityRefParser (void . string $ ", ")
   void newline
   pure entityRefs
 
 propertyParser1 :: Text -> Parser [EntityRef a]
 propertyParser1 lbl = do
-  void . string $ "-- "
-  void . string $ lbl
-  void . single $ ':'
-  hspace
+  propertyLabelParser lbl
   entityRefs <- sepEndBy1 entityRefParser (void . string $ ", ")
   void newline
   pure entityRefs
