@@ -6,6 +6,7 @@ module Maker.Parser where
 
 import Adventure.Engine
 import Adventure.Engine.Database
+import Control.Applicative
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.State
@@ -23,10 +24,13 @@ newtype MakerParseState = MakerParseState { seenRoomEntityIds :: Set (EntityId R
 
 type Parser = ParsecT Void Text (StateT MakerParseState Identity)
 
-nonEmptyLineParser :: Parser Text
-nonEmptyLineParser = do
-  str <- someTill latin1Char newline
+nonEmptyLineParserBy :: Parser a -> Parser Text
+nonEmptyLineParserBy sep = do
+  str <- someTill latin1Char sep
   pure . T.pack $ str
+
+nonEmptyLineParser :: Parser Text
+nonEmptyLineParser = nonEmptyLineParserBy newline
 
 lineParser :: Parser Text
 lineParser = do
@@ -124,6 +128,29 @@ entityRefParser = do
   space1
   entityName <- T.pack <$> manyTill latin1Char (single ')')
   pure $ EntityRef entityId entityName
+
+digParser :: Parser (Text, Maybe (EntityRef a))
+digParser = try basicDigParser <|> itemDigParser
+
+basicDigParser :: Parser (Text, Maybe (EntityRef a))
+basicDigParser = do
+  void . single $ '['
+  hspace
+  successMsg <- nonEmptyLineParserBy $ single ']'
+  case T.find (== '|') successMsg of
+    Just _ -> fail "Invalid basic dig success message"
+    Nothing -> pure (T.strip successMsg, Nothing)
+
+itemDigParser :: Parser (Text, Maybe (EntityRef a))
+itemDigParser = do
+  void . single $ '['
+  hspace
+  successMsg <- nonEmptyLineParserBy $ string "||"
+  hspace
+  entityRef <- entityRefParser
+  hspace
+  void . single $ ']'
+  pure (T.strip successMsg, Just entityRef)
 
 propertyLabelParser :: Text -> Parser ()
 propertyLabelParser lbl = do

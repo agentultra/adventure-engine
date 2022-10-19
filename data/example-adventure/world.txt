@@ -18,6 +18,7 @@ This is the main hall, it is great.
 -- Exits: (2. Front Door)
 -- Objects:
 -- Background: elkjsdfsdf/foo_image_whatever.bmp
+-- Dig: [     You dig! Amazing! It can't be! || (1. Jewel)], [You dig some more!]
 
 # 3. Another Dimension
 
