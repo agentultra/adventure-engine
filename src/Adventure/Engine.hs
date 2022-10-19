@@ -676,7 +676,7 @@ handleDig _ = do
     Right [] -> do
       addPlayerMessage "You dig but nothing seems to come of it..."
       emitEvent $ Dug roomId Nothing
-    Right ((successMsg, mItem):rest) -> do
+    Right (DigDefinition successMsg mItem:rest) -> do
       updateCurrentRoom $ \r -> r { _roomDig = rest <$ _roomDig r }
       case mItem of
         Nothing -> do

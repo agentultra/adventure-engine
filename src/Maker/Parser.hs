@@ -53,15 +53,16 @@ roomParser = do
   roomName <- nonEmptyLineParser
   roomDescLines <- manyTill lineParser $ single '#'
   void newline
-  exitIds <- propertyParser1 @Exit "Exits"
-  objectIds <- propertyParser @GameObject "Objects"
+  exitIds <- entityRefPropertyListParser1 @Exit "Exits"
+  objectIds <- entityRefPropertyListParser @GameObject "Objects"
   bg <- option Nothing backgroundImageParser
+  digs <- optional $ propertyParser "Dig" digParser
   let room = Room
         { _roomName = roomName
         , _roomDescription = T.strip . T.concat $ roomDescLines
         , _roomObjects = M.fromList . map entityRefToMap $ objectIds
         , _roomExits = M.fromList . map entityRefToMap $ exitIds
-        , _roomDig = Left "You can't do that here.."
+        , _roomDig = maybe (Left "You can't do that here..") Right digs
         , _roomBackground = bg
         }
   pure (roomId, room)
@@ -129,8 +130,10 @@ entityRefParser = do
   entityName <- T.pack <$> manyTill latin1Char (single ')')
   pure $ EntityRef entityId entityName
 
-digParser :: Parser (Text, Maybe (EntityRef a))
-digParser = try basicDigParser <|> itemDigParser
+digParser :: Parser DigDefinition
+digParser = do
+  (digSuccess, maybeDigGameObject) <- try basicDigParser <|> itemDigParser
+  pure $ DigDefinition digSuccess (_entityRefEntityId <$> maybeDigGameObject)
 
 basicDigParser :: Parser (Text, Maybe (EntityRef a))
 basicDigParser = do
@@ -159,19 +162,25 @@ propertyLabelParser lbl = do
   void . single $ ':'
   hspace
 
-propertyParser :: Text -> Parser [EntityRef a]
-propertyParser lbl = do
+propertyParser :: Text -> Parser a -> Parser [a]
+propertyParser lbl p = do
   propertyLabelParser lbl
-  entityRefs <- sepEndBy entityRefParser (void . string $ ", ")
+  ps <- sepEndBy p (void . string $ ", ")
   void newline
-  pure entityRefs
+  pure ps
 
-propertyParser1 :: Text -> Parser [EntityRef a]
-propertyParser1 lbl = do
+entityRefPropertyListParser :: Text -> Parser [EntityRef a]
+entityRefPropertyListParser lbl = propertyParser lbl entityRefParser
+
+propertyParser1 :: Text -> Parser a -> Parser [a]
+propertyParser1 lbl p = do
   propertyLabelParser lbl
-  entityRefs <- sepEndBy1 entityRefParser (void . string $ ", ")
+  ps <- sepEndBy1 p (void . string $ ", ")
   void newline
-  pure entityRefs
+  pure ps
+
+entityRefPropertyListParser1 :: Text -> Parser [EntityRef a]
+entityRefPropertyListParser1 lbl = propertyParser1 lbl entityRefParser
 
 runMakerParser :: Parser a -> FilePath -> Text -> Either (ParseErrorBundle Text Void) a
 runMakerParser p fpath

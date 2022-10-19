@@ -19,13 +19,23 @@ import GHC.Generics
 import Adventure.Engine.Database
 import Adventure.Engine.Language
 
+data DigDefinition
+  = DigDefinition
+  { _digDefinitionSuccess :: Text
+  , _digDefinitionGameObject :: Maybe (EntityId GameObject)
+  }
+  deriving (Eq, Generic, Show)
+
+deriving instance JSON.ToJSON DigDefinition
+deriving instance JSON.FromJSON DigDefinition
+
 data Room
   = Room
   { _roomName        :: Text
   , _roomDescription :: Text
   , _roomObjects     :: Map Text (EntityId GameObject)
   , _roomExits       :: Map Text (EntityId Exit)
-  , _roomDig         :: Either Text [(Text, Maybe (EntityId GameObject))]
+  , _roomDig         :: Either Text [DigDefinition]
   , _roomBackground  :: Maybe Text
   }
   deriving (Eq, Generic, Show)
