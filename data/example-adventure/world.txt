@@ -15,7 +15,7 @@ LSKDFJLSDKFJLSKDJF
 
 This is the main hall, it is great.
 #
--- Exits: (2. Front Door)
+-- Exits: (1. Front Door)
 -- Objects:
 -- Background: elkjsdfsdf/foo_image_whatever.bmp
 -- Dig: [     You dig! Amazing! It can't be! || (1. Jewel)], [You dig some more!]
@@ -27,3 +27,12 @@ HERE WE ARE. NEAR THE END. PREPARE FOR PASTA.
 #
 -- Exits: (4. Black Door)
 -- Objects:
+
+[Exits]
+# 1. Front Door
+
+A standard, cheap looking front door.  It is painted a wicked shade of
+red.
+#
+-- From: (1. The Front Porch)
+-- To: (2. The Main Hall)

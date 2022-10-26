@@ -20,7 +20,11 @@ import System.FilePath
 import Text.Megaparsec
 import Text.Megaparsec.Char
 
-newtype MakerParseState = MakerParseState { seenRoomEntityIds :: Set (EntityId Room) }
+data MakerParseState
+  = MakerParseState
+  { seenRoomEntityIds :: Set (EntityId Room)
+  , seenExitEntityIds :: Set (EntityId Exit)
+  }
 
 type Parser = ParsecT Void Text (StateT MakerParseState Identity)
 
@@ -56,7 +60,7 @@ roomParser = do
   exitIds <- entityRefPropertyListParser1 @Exit "Exits"
   objectIds <- entityRefPropertyListParser @GameObject "Objects"
   bg <- option Nothing backgroundImageParser
-  digs <- optional $ propertyParser "Dig" digParser
+  digs <- optional $ propertyListParser "Dig" digParser
   let room = Room
         { _roomName = roomName
         , _roomDescription = T.strip . T.concat $ roomDescLines
@@ -83,6 +87,28 @@ backgroundFilenameParser = do
     then pure . T.pack . takeFileName . T.unpack $ path
     else fail "Unsupported background file extension"
 
+exitParser :: Parser (EntityId Exit, Exit)
+exitParser = do
+  s@MakerParseState {..} <- lift get
+  void . single $ '#'
+  space1
+  exitId <- entityIdParser @Exit
+  when (exitId `S.member` seenExitEntityIds) $ fail "Exit IDs must be unique"
+  lift . put $ s { seenExitEntityIds = exitId `S.insert` seenExitEntityIds }
+  exitName <- nonEmptyLineParser
+  exitDescLines <- manyTill lineParser $ single '#'
+  void newline
+  (EntityRef exitFromId _) <- propertyParser "From" $ entityRefParser @Room
+  (EntityRef exitToId _) <- propertyParser "To" $ entityRefParser @Room
+  let exit = Exit
+        { _exitName = exitName
+        , _exitDescription = T.strip . T.concat $ exitDescLines
+        , _exitFrom = exitFromId
+        , _exitTo = exitToId
+        , _exitLock = Nothing
+        }
+  pure (exitId, exit)
+
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
   void . single $ '['
@@ -94,13 +120,17 @@ sectionParser sectionName p sep = do
 roomSectionParser :: Parser [(EntityId Room, Room)]
 roomSectionParser = sectionParser "Rooms" roomParser $ void newline <|> eof
 
+exitSectionParser :: Parser [(EntityId Exit, Exit)]
+exitSectionParser = sectionParser "Exits" exitParser $ void newline <|> eof
+
 worldParser :: Parser World
 worldParser = do
   worldRooms <- roomSectionParser
+  worldExits <- exitSectionParser
   pure $ World
     { _worldRooms = M.fromList worldRooms
     , _worldObjects = mempty
-    , _worldExits = mempty
+    , _worldExits = M.fromList worldExits
     , _worldPlayerRoom = EntityId 0
     , _worldPlayerInventory = mempty
     , _worldPlayerVerbs = mempty
@@ -155,6 +185,13 @@ itemDigParser = do
   void . single $ ']'
   pure (T.strip successMsg, Just entityRef)
 
+propertyParser :: Text -> Parser a -> Parser a
+propertyParser lbl p = do
+  propertyLabelParser lbl
+  prop <- p
+  void newline
+  pure prop
+
 propertyLabelParser :: Text -> Parser ()
 propertyLabelParser lbl = do
   void . string $ "-- "
@@ -162,30 +199,30 @@ propertyLabelParser lbl = do
   void . single $ ':'
   hspace
 
-propertyParser :: Text -> Parser a -> Parser [a]
-propertyParser lbl p = do
+propertyListParser :: Text -> Parser a -> Parser [a]
+propertyListParser lbl p = do
   propertyLabelParser lbl
   ps <- sepEndBy p (void . string $ ", ")
   void newline
   pure ps
 
 entityRefPropertyListParser :: Text -> Parser [EntityRef a]
-entityRefPropertyListParser lbl = propertyParser lbl entityRefParser
+entityRefPropertyListParser lbl = propertyListParser lbl entityRefParser
 
-propertyParser1 :: Text -> Parser a -> Parser [a]
-propertyParser1 lbl p = do
+propertyListParser1 :: Text -> Parser a -> Parser [a]
+propertyListParser1 lbl p = do
   propertyLabelParser lbl
   ps <- sepEndBy1 p (void . string $ ", ")
   void newline
   pure ps
 
 entityRefPropertyListParser1 :: Text -> Parser [EntityRef a]
-entityRefPropertyListParser1 lbl = propertyParser1 lbl entityRefParser
+entityRefPropertyListParser1 lbl = propertyListParser1 lbl entityRefParser
 
 runMakerParser :: Parser a -> FilePath -> Text -> Either (ParseErrorBundle Text Void) a
 runMakerParser p fpath
   = runIdentity
-  . (`evalStateT` MakerParseState S.empty)
+  . (`evalStateT` MakerParseState S.empty S.empty)
   . runParserT p fpath
 
 testMakerParser :: Show a => Parser a -> Text -> IO ()
