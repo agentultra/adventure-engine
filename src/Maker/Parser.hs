@@ -98,16 +98,22 @@ exitParser = do
   exitName <- nonEmptyLineParser
   exitDescLines <- manyTill lineParser $ single '#'
   void newline
-  (EntityRef exitFromId _) <- propertyParser "From" $ entityRefParser @Room
-  (EntityRef exitToId _) <- propertyParser "To" $ entityRefParser @Room
+  exitFromRoomId <- exitRefParser "From" seenRoomEntityIds
+  exitToRoomId <- exitRefParser "To" seenRoomEntityIds
   let exit = Exit
         { _exitName = exitName
         , _exitDescription = T.strip . T.concat $ exitDescLines
-        , _exitFrom = exitFromId
-        , _exitTo = exitToId
+        , _exitFrom = exitFromRoomId
+        , _exitTo = exitToRoomId
         , _exitLock = Nothing
         }
   pure (exitId, exit)
+  where
+    exitRefParser lbl roomIds = propertyParser lbl $ try $ do
+      (EntityRef roomId _) <- entityRefParser @Room
+      unless (roomId `S.member` roomIds) $
+        fail "Room ID is not defined, check the [Rooms] section"
+      pure roomId
 
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
