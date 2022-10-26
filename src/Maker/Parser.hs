@@ -22,8 +22,8 @@ import Text.Megaparsec.Char
 
 data MakerParseState
   = MakerParseState
-  { seenRoomEntityIds :: Set (EntityId Room)
-  , seenExitEntityIds :: Set (EntityId Exit)
+  { seenRoomEntityRefs :: Set (EntityRef Room)
+  , seenExitEntityRefs :: Set (EntityRef Exit)
   }
 
 type Parser = ParsecT Void Text (StateT MakerParseState Identity)
@@ -52,9 +52,11 @@ roomParser = do
   void . single $ '#'
   space1
   roomId <- entityIdParser @Room
-  when (roomId `S.member` seenRoomEntityIds) $ fail "Room IDs must be unique"
-  lift . put $ s { seenRoomEntityIds = roomId `S.insert` seenRoomEntityIds }
+  hspace
   roomName <- nonEmptyLineParser
+  let roomRef = EntityRef roomId roomName
+  when (roomRef `S.member` seenRoomEntityRefs) $ fail "Room IDs must be unique"
+  lift . put $ s { seenRoomEntityRefs = roomRef `S.insert` seenRoomEntityRefs }
   roomDescLines <- manyTill lineParser $ single '#'
   void newline
   exitIds <- entityRefPropertyListParser1 @Exit "Exits"
@@ -69,7 +71,7 @@ roomParser = do
         , _roomDig = maybe (Left "You can't do that here..") Right digs
         , _roomBackground = bg
         }
-  pure (roomId, room)
+  pure (_entityRefEntityId roomRef, room)
   where
     entityRefToMap :: EntityRef a -> (Text, EntityId a)
     entityRefToMap (EntityRef entityId entityName) = (entityName, entityId)
@@ -93,13 +95,15 @@ exitParser = do
   void . single $ '#'
   space1
   exitId <- entityIdParser @Exit
-  when (exitId `S.member` seenExitEntityIds) $ fail "Exit IDs must be unique"
-  lift . put $ s { seenExitEntityIds = exitId `S.insert` seenExitEntityIds }
+  hspace
   exitName <- nonEmptyLineParser
+  let exitRef = EntityRef exitId exitName
+  when (exitRef `S.member` seenExitEntityRefs) $ fail "Exit IDs must be unique"
+  lift . put $ s { seenExitEntityRefs = exitRef `S.insert` seenExitEntityRefs }
   exitDescLines <- manyTill lineParser $ single '#'
   void newline
-  exitFromRoomId <- exitRefParser "From" seenRoomEntityIds
-  exitToRoomId <- exitRefParser "To" seenRoomEntityIds
+  exitFromRoomId <- exitRefParser "From" seenRoomEntityRefs
+  exitToRoomId <- exitRefParser "To" seenRoomEntityRefs
   let exit = Exit
         { _exitName = exitName
         , _exitDescription = T.strip . T.concat $ exitDescLines
@@ -107,13 +111,13 @@ exitParser = do
         , _exitTo = exitToRoomId
         , _exitLock = Nothing
         }
-  pure (exitId, exit)
+  pure (_entityRefEntityId exitRef, exit)
   where
-    exitRefParser lbl roomIds = propertyParser lbl $ try $ do
-      (EntityRef roomId _) <- entityRefParser @Room
-      unless (roomId `S.member` roomIds) $
+    exitRefParser lbl roomRefs = propertyParser lbl $ try $ do
+      roomRef <- entityRefParser @Room
+      unless (roomRef `S.member` roomRefs) $
         fail "Room ID is not defined, check the [Rooms] section"
-      pure roomId
+      pure . _entityRefEntityId $ roomRef
 
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
@@ -153,7 +157,7 @@ data EntityRef a
   { _entityRefEntityId :: EntityId a
   , _entityRefName     :: Text
   }
-  deriving (Eq, Show)
+  deriving (Eq, Ord, Show)
 
 -- | Parse an entity reference in the source text.
 --
