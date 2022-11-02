@@ -6,10 +6,12 @@ module Maker.Parser where
 
 import Adventure.Engine
 import Adventure.Engine.Database
-import Control.Applicative
+import Adventure.Engine.Language
+import Control.Applicative hiding (many)
 import Control.Monad
 import Control.Monad.Identity
 import Control.Monad.State
+import Data.Char
 import qualified Data.Map as M
 import Data.Set (Set)
 import qualified Data.Set as S
@@ -36,6 +38,9 @@ nonEmptyLineParserBy sep = do
 nonEmptyLineParser :: Parser Text
 nonEmptyLineParser = nonEmptyLineParserBy newline
 
+nonLowerChar :: Parser (Token Text)
+nonLowerChar = satisfy (not . isLower) <?> "not lowercase letter"
+
 lineParser :: Parser Text
 lineParser = do
   str <- T.pack <$> manyTill latin1Char newline
@@ -45,6 +50,27 @@ entityIdParser :: Parser (EntityId a)
 entityIdParser = do
   digits <- manyTill digitChar (single '.')
   pure . EntityId $ read digits
+
+intParser :: Parser Int
+intParser = read <$> many digitChar
+
+verbParser :: Parser Verb
+verbParser = do
+  (str, _) <- manyTill_ lowerChar nonLowerChar
+  if str `elem` validVerbs
+    then pure . Verb . T.pack $ str
+    else fail $ "Invalid verb: " ++ str
+  where
+    validVerbs =
+      [ "walk"
+      , "pickup"
+      , "drop"
+      , "look"
+      , "examine"
+      , "take"
+      , "dig"
+      , "use"
+      ]
 
 roomParser :: Parser (EntityId Room, Room)
 roomParser = do
@@ -119,6 +145,48 @@ exitParser = do
         fail "Room ID is not defined, check the [Rooms] section"
       pure . _entityRefEntityId $ roomRef
 
+data GameObjectType
+  = ItemType
+  | ContainerType
+  deriving (Eq, Show)
+
+gameObjectParser :: Parser (EntityId GameObject, GameObject)
+gameObjectParser = do
+  void . single $ '#'
+  hspace1
+  gameObjectId <- entityIdParser @GameObject
+  hspace1
+  gameObjectName <- nonEmptyLineParser
+  gameObjectDescLines <- manyTill lineParser $ single '#'
+  void newline
+  gameObjectType <- propertyParser "Type" gameObjectTypeParser
+  gameObject <- case gameObjectType of
+    ItemType -> do
+      itemSize <- propertyParser "Size" intParser
+      itemWeight <- propertyParser "Weight" intParser
+      pure
+        $ ObjectItem
+        $ Item
+        { _itemSize' = itemSize
+        , _itemWeight' = itemWeight
+        , _itemVerbs = []
+        }
+    ContainerType -> fail "Not implemented yet..."
+  let g = GameObject
+          { _gameObjectName = gameObjectName
+          , _gameObjectDescription = T.strip . T.unlines $ gameObjectDescLines
+          , _gameObjectObject = gameObject
+          }
+  pure (gameObjectId, g)
+  where
+    gameObjectTypeParser :: Parser GameObjectType
+    gameObjectTypeParser = do
+      typeName <- many letterChar
+      case typeName of
+        "Item" -> pure ItemType
+        "Container" -> pure ContainerType
+        invalid -> fail $ "Invalid GameObject type: " ++ invalid
+
 sectionParser :: Text -> Parser a -> Parser b -> Parser [a]
 sectionParser sectionName p sep = do
   void . single $ '['
@@ -133,13 +201,17 @@ roomSectionParser = sectionParser "Rooms" roomParser $ void newline <|> eof
 exitSectionParser :: Parser [(EntityId Exit, Exit)]
 exitSectionParser = sectionParser "Exits" exitParser $ void newline <|> eof
 
+gameObjectSectionParser :: Parser [(EntityId GameObject, GameObject)]
+gameObjectSectionParser = sectionParser "GameObjects" gameObjectParser $ void newline <|> eof
+
 worldParser :: Parser World
 worldParser = do
+  worldObjects <- gameObjectSectionParser
   worldRooms <- roomSectionParser
   worldExits <- exitSectionParser
   pure $ World
     { _worldRooms = M.fromList worldRooms
-    , _worldObjects = mempty
+    , _worldObjects = M.fromList worldObjects
     , _worldExits = M.fromList worldExits
     , _worldPlayerRoom = EntityId 0
     , _worldPlayerInventory = mempty

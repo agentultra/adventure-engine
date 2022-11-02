@@ -1,3 +1,20 @@
+[GameObjects]
+# 1. Baz
+
+It looks a little rubbery and wet.
+#
+-- Type: Item
+-- Size: 2
+-- Weight: 2
+
+# 2. Bar
+
+A long steel bar.
+#
+-- Type: Item
+-- Size: 4
+-- Weight: 12
+
 [Rooms]
 # 1. The Front Porch
 
